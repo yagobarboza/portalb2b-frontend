@@ -74,7 +74,6 @@ export default function TeamPage() {
   const [editUser, setEditUser] = useState<UserRead | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<UserRead | null>(null);
   const [cancelInvite, setCancelInvite] = useState<InviteResponse | null>(null);
-
   const [saving, setSaving] = useState(false);
 
   // ── Formulário de convite
@@ -132,8 +131,13 @@ export default function TeamPage() {
   useEffect(() => { loadRoles(); }, [loadRoles]);
   useEffect(() => { loadInvites(); }, [loadInvites]);
 
-  // Ordem: roles disponíveis para o select de convite/edição.
-  const selectableRoles = roles.filter((r) => !r.is_system || r.slug === 'admin');
+  // ── Perfis disponíveis para convite/edição.
+  // Mostra TODOS os perfis do tenant (admin, vendedor, financeiro, suporte
+  // + perfis customizados). Exclui apenas 'cliente' (perfil de comprador,
+  // não de equipe) e 'super_admin' (global, não atribuível a um membro).
+  const selectableRoles = roles.filter(
+    (r) => r.slug !== 'cliente' && r.slug !== 'super_admin'
+  );
 
   // ── Convidar (criação de usuário é SEMPRE por convite — contrato)
   const submitInvite = async (e: React.FormEvent) => {
@@ -292,7 +296,8 @@ export default function TeamPage() {
                 <DialogTrigger asChild>
                   <Button variant="outline"><Shield className="mr-2 h-4 w-4" />Perfis de acesso</Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-lg">
+                {/* max-h + overflow: permite rolar para baixo no dialog */}
+                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>Perfis de acesso (Roles)</DialogTitle></DialogHeader>
                   <div className="max-h-72 space-y-2 overflow-auto">
                     {roles.map((r) => (
@@ -353,7 +358,6 @@ export default function TeamPage() {
                 </DialogContent>
               </Dialog>
             )}
-
             {can(PERMISSIONS.USER_CREATE) && (
               <Dialog open={inviteOpen} onOpenChange={(o) => { setInviteOpen(o); if (!o) setInviteError(null); }}>
                 <DialogTrigger asChild>
