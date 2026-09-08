@@ -15,9 +15,9 @@ interface CartContextValue {
   /** Produtos conhecidos (usados p/ enriquecer nome/imagem dos itens). */
   productMap: Record<string, Product>;
   total: number;
+  /** Nº de PRODUTOS distintos no carrinho (não a soma de unidades). */
   count: number;
   isLoading: boolean;
-  /** Registra um produto no mapa local (chamado pela vitrine ao listar/adicionar). */
   registerProduct: (product: Product) => void;
   addItem: (productId: string, quantity: number) => Promise<void>;
   updateQty: (itemId: string, quantity: number) => Promise<void>;
@@ -41,7 +41,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // Carrega o carrinho do cliente autenticado (GET /cart).
   const loadCart = useCallback(async () => {
-    // Só cliente autenticado tem carrinho. Sem usuário → estado vazio.
     if (!user || resolveProfile(user) !== 'cliente') {
       setItems([]);
       setTotal(0);
@@ -67,7 +66,6 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch {
-      // Sem sessão/erro → carrinho vazio; erros não vazam detalhes.
       setItems([]);
       setTotal(0);
     } finally {
@@ -87,8 +85,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(() => loadCart(), [loadCart]);
 
-  // Adiciona item → backend valida produto/quantidade E recalcula o preço
-  // negociado do cliente. Nunca enviamos preço.
+  // Adiciona item → backend valida produto/quantidade E recalcula o preço.
   const addItem = useCallback(async (productId: string, quantity: number) => {
     const qty = Math.max(1, Math.floor(quantity));
     await api.post('/cart/items', { product_id: productId, quantity: qty });
@@ -111,7 +108,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setTotal(0);
   }, []);
 
-  const count = useMemo(() => items.reduce((sum, i) => sum + i.quantity, 0), [items]);
+  // ✅ BUG 8 corrigido: badge = quantidade de PRODUTOS, não de unidades.
+  // (1 produto com 50 unidades → badge mostra 1, não 50)
+  const count = useMemo(() => items.length, [items]);
 
   const value: CartContextValue = {
     items,

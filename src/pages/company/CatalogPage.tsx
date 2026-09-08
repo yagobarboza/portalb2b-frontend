@@ -19,15 +19,24 @@ import {
 } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { Textarea } from '../../components/ui/textarea';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '../../components/ui/table';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
-import { Textarea } from '../../components/ui/textarea';
 
 const PAGE_SIZE = 20;
-/** Valor sentinela do Select Radix p/ "sem categoria" (Radix não aceita string vazia). */
 const NO_CATEGORY = 'none';
+
+/** Estoques são SEMPRE inteiros (10, nunca "10.000"). */
+const stockInt = (v: number | string | null | undefined): number | null => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (Number.isNaN(n)) return null;
+  return Math.max(0, Math.trunc(n));
+};
 
 interface ProductForm {
   sku: string;
@@ -42,8 +51,8 @@ interface ProductForm {
 }
 
 const emptyForm: ProductForm = {
-  sku: '', code: '', name: '', brand: '', category_id: '', unit: '',
-  price: '', stock: '', description: '',
+  sku: '', code: '', name: '', brand: '', category_id: '',
+  unit: '', price: '', stock: '', description: '',
 };
 
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
@@ -66,11 +75,9 @@ export default function CatalogPage() {
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-
   const [createOpen, setCreateOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
@@ -78,10 +85,9 @@ export default function CatalogPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
-
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Debounce da busca (evita flood de requisições no backend).
+  // Debounce da busca.
   useEffect(() => {
     const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
     return () => window.clearTimeout(t);
@@ -176,7 +182,8 @@ export default function CatalogPage() {
     category_id: form.category_id || null,
     unit: form.unit.trim() || null,
     price: Number(form.price),
-    stock: form.stock.trim() ? Number(form.stock) : null,
+    // ✅ Estoque sempre inteiro (nunca decimal/moeda).
+    stock: form.stock.trim() ? stockInt(form.stock) : null,
     description: form.description.trim() || null,
   });
 
@@ -245,7 +252,7 @@ export default function CatalogPage() {
       category_id: p.category_id ?? '',
       unit: p.unit ?? '',
       price: String(p.price),
-      stock: p.stock === null ? '' : String(p.stock),
+      stock: p.stock === null || p.stock === undefined ? '' : String(stockInt(p.stock)),
       description: p.description ?? '',
     });
     setFormError(null);
@@ -264,7 +271,7 @@ export default function CatalogPage() {
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" />Cadastrar produto</Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
               <DialogHeader><DialogTitle>Cadastrar produto</DialogTitle></DialogHeader>
               <form onSubmit={handleCreate} className="space-y-4" noValidate>
                 <div className="grid grid-cols-2 gap-3">
@@ -283,16 +290,16 @@ export default function CatalogPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="category_id">Categoria</Label>
+                    <Label htmlFor="brand">Marca</Label>
+                    <Input id="brand" value={form.brand} onChange={setField('brand')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="category">Categoria</Label>
                     <Select
                       value={form.category_id || NO_CATEGORY}
-                      onValueChange={(value) =>
-                        setForm((prev) => ({ ...prev, category_id: value === NO_CATEGORY ? '' : value }))
-                      }
+                      onValueChange={(v) => setForm((prev) => ({ ...prev, category_id: v === NO_CATEGORY ? '' : v }))}
                     >
-                      <SelectTrigger id="category_id" className="w-full">
-                        <SelectValue placeholder="Sem categoria" />
-                      </SelectTrigger>
+                      <SelectTrigger id="category" className="w-full"><SelectValue placeholder="Selecione…" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NO_CATEGORY}>Sem categoria</SelectItem>
                         {categories.map((c) => (
@@ -301,10 +308,6 @@ export default function CatalogPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="brand">Marca</Label>
-                    <Input id="brand" value={form.brand} onChange={setField('brand')} />
-                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
@@ -312,8 +315,9 @@ export default function CatalogPage() {
                     <Input id="price" type="number" step="0.01" min="0" value={form.price} onChange={setField('price')} required />
                   </div>
                   <div className="space-y-2">
+                    {/* ✅ step="1" — estoque é inteiro */}
                     <Label htmlFor="stock">Estoque</Label>
-                    <Input id="stock" type="number" step="0.01" min="0" value={form.stock} onChange={setField('stock')} />
+                    <Input id="stock" type="number" step="1" min="0" inputMode="numeric" value={form.stock} onChange={setField('stock')} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="unit">Unidade</Label>
@@ -347,7 +351,7 @@ export default function CatalogPage() {
                 {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
 
                 <DialogFooter>
-                  <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Salvar produto'}</Button>
+                  <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar'}</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -356,8 +360,8 @@ export default function CatalogPage() {
       />
 
       {/* Filtros */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative max-w-md flex-1">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
@@ -369,14 +373,9 @@ export default function CatalogPage() {
         <div className="w-full sm:w-56">
           <Select
             value={categoryFilter || NO_CATEGORY}
-            onValueChange={(value) => {
-              setCategoryFilter(value === NO_CATEGORY ? '' : value);
-              setPage(1);
-            }}
+            onValueChange={(v) => { setCategoryFilter(v === NO_CATEGORY ? '' : v); setPage(1); }}
           >
-            <SelectTrigger className="w-full" aria-label="Filtrar por categoria">
-              <SelectValue placeholder="Todas as categorias" />
-            </SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue placeholder="Categoria" /></SelectTrigger>
             <SelectContent>
               <SelectItem value={NO_CATEGORY}>Todas as categorias</SelectItem>
               {categories.map((c) => (
@@ -403,7 +402,6 @@ export default function CatalogPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-16">Imagem</TableHead>
                     <TableHead>Produto</TableHead>
                     <TableHead>Categoria</TableHead>
                     <TableHead>SKU</TableHead>
@@ -417,27 +415,27 @@ export default function CatalogPage() {
                   {products.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell>
-                        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md bg-muted/60">
+                        <div className="flex items-center gap-3">
                           {isSafeImageUrl(p.image_url) ? (
-                            <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={p.image_url} alt={p.name} className="h-10 w-10 rounded object-cover" referrerPolicy="no-referrer" />
                           ) : (
-                            <Package className="h-5 w-5 text-muted-foreground/40" />
+                            <div className="flex h-10 w-10 items-center justify-center rounded bg-muted/40">
+                              <Package className="h-5 w-5 text-muted-foreground/40" />
+                            </div>
                           )}
+                          <div>
+                            <p className="font-medium">{p.name}</p>
+                            {p.code && <p className="text-xs text-muted-foreground">Cód.: {p.code}</p>}
+                          </div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell>
-                        {p.category_id ? (
-                          <Badge variant="secondary">
-                            {categories.find((c) => c.id === p.category_id)?.name ?? '—'}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                      <TableCell className="text-muted-foreground">
+                        {categories.find((c) => c.id === p.category_id)?.name ?? '—'}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{p.sku}</TableCell>
-                      <TableCell className="font-semibold">{formatCurrency(p.price)}</TableCell>
-                      <TableCell>{p.stock === null ? '—' : `${p.stock} ${p.unit ?? 'un'}`}</TableCell>
+                      <TableCell className="font-mono text-xs">{p.sku}</TableCell>
+                      <TableCell>{formatCurrency(Number(p.price))}</TableCell>
+                      {/* ✅ Estoque inteiro */}
+                      <TableCell>{p.stock === null || p.stock === undefined ? '—' : `${stockInt(p.stock)} ${p.unit ?? 'un'}`}</TableCell>
                       <TableCell>
                         <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
                           {p.status === 'active' ? 'Ativo' : 'Inativo'}
@@ -456,12 +454,8 @@ export default function CatalogPage() {
                 <div className="flex items-center justify-between border-t px-4 py-3">
                   <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                      Anterior
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>
-                      Próxima
-                    </Button>
+                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
+                    <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
                   </div>
                 </div>
               )}
@@ -472,7 +466,7 @@ export default function CatalogPage() {
 
       {/* Edição */}
       <Dialog open={!!editProduct} onOpenChange={(o) => { if (!o) { setEditProduct(null); resetForm(); } }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
           <DialogHeader><DialogTitle>Editar produto</DialogTitle></DialogHeader>
           {editProduct && (
             <form onSubmit={handleEdit} className="space-y-4" noValidate>
@@ -492,16 +486,16 @@ export default function CatalogPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
+                  <Label htmlFor="edit-brand">Marca</Label>
+                  <Input id="edit-brand" value={form.brand} onChange={setField('brand')} />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="edit-category">Categoria</Label>
                   <Select
                     value={form.category_id || NO_CATEGORY}
-                    onValueChange={(value) =>
-                      setForm((prev) => ({ ...prev, category_id: value === NO_CATEGORY ? '' : value }))
-                    }
+                    onValueChange={(v) => setForm((prev) => ({ ...prev, category_id: v === NO_CATEGORY ? '' : v }))}
                   >
-                    <SelectTrigger id="edit-category" className="w-full">
-                      <SelectValue placeholder="Sem categoria" />
-                    </SelectTrigger>
+                    <SelectTrigger id="edit-category" className="w-full"><SelectValue placeholder="Selecione…" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NO_CATEGORY}>Sem categoria</SelectItem>
                       {categories.map((c) => (
@@ -510,10 +504,6 @@ export default function CatalogPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-brand">Marca</Label>
-                  <Input id="edit-brand" value={form.brand} onChange={setField('brand')} />
-                </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-2">
@@ -521,8 +511,9 @@ export default function CatalogPage() {
                   <Input id="edit-price" type="number" step="0.01" min="0" value={form.price} onChange={setField('price')} required />
                 </div>
                 <div className="space-y-2">
+                  {/* ✅ step="1" */}
                   <Label htmlFor="edit-stock">Estoque</Label>
-                  <Input id="edit-stock" type="number" step="0.01" min="0" value={form.stock} onChange={setField('stock')} />
+                  <Input id="edit-stock" type="number" step="1" min="0" inputMode="numeric" value={form.stock} onChange={setField('stock')} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-unit">Unidade</Label>

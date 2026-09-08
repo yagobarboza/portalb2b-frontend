@@ -1,23 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { BarChart3, CheckCircle, Clock, DollarSign, Package, Search, XCircle } from 'lucide-react';
+import { BarChart3, CheckCircle, Clock, DollarSign, Eye, Package, Search, XCircle } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
-import type { Order, OrderPage, OrderStatus } from '@/types/api';
+import type { CustomerPage, Order, OrderPage, OrderStatus, ProductPage } from '@/types/api';
 import { COMPANY_ORDER_TRANSITIONS, orderStatusClass, orderStatusLabel } from '../../lib/orderStatus';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Textarea } from '../../components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '../../components/ui/select';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../../components/ui/dialog';
-import { Label } from '../../components/ui/label';
-import { Textarea } from '../../components/ui/textarea';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../../components/ui/select';
 
 const PAGE_SIZE = 20;
 
@@ -27,22 +27,44 @@ export default function CompanyOrdersPage() {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
-
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | OrderStatus>('all');
-
+  // ✅ BUG 6: mapas de nomes (cliente + produto).
+  const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
+  const [productMap, setProductMap] = useState<Record<string, string>>({});
+  // Detalhe de itens
+  const [detail, setDetail] = useState<Order | null>(null);
+  // Transição de status
   const [transitionTarget, setTransitionTarget] = useState<Order | null>(null);
   const [transitionTo, setTransitionTo] = useState<OrderStatus | null>(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Debounce da busca (evita flood de requisições).
   useEffect(() => {
     const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
     return () => window.clearTimeout(t);
   }, [search]);
+
+  // Carrega nomes de clientes e produtos para exibição amigável.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const cust = await api.get<CustomerPage>('/customers', { page: 1, page_size: 100 });
+        const cm: Record<string, string> = {};
+        for (const c of cust.items) cm[c.id] = c.name;
+        const prod = await api.get<ProductPage>('/catalog/products', { page: 1, page_size: 100 });
+        const pm: Record<string, string> = {};
+        for (const p of prod.items) pm[p.id] = p.name;
+        if (active) { setCustomerMap(cm); setProductMap(pm); }
+      } catch {
+        // fallback: IDs.
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,22 +87,34 @@ export default function CompanyOrdersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // KPIs calculados a partir da página atual (o backend é a fonte real de totais).
   const kpis = useMemo(() => {
     const pending = orders.filter((o) => o.status === 'submitted' || o.status === 'received' || o.status === 'under_review').length;
     const approved = orders.filter((o) => o.status === 'approved').length;
     const cancelled = orders.filter((o) => o.status === 'cancelled').length;
-    const value = orders.filter((o) => o.status !== 'cancelled').reduce((s, o) => s + o.total, 0);
-    const items = orders.reduce((s, o) => s + o.items.reduce((a, i) => a + i.quantity, 0), 0);
+    const value = orders.filter((o) => o.status !== 'cancelled').reduce((s, o) => s + Number(o.total), 0);
+    const itemsCount = orders.reduce((s, o) => s + o.items.reduce((a, i) => a + Number(i.quantity), 0), 0);
     return [
-      { label: 'Total de pedidos', value: String(total), icon: Package, tone: 'text-blue-600 bg-blue-100' },
-      { label: 'Aguardando ação', value: String(pending), icon: Clock, tone: 'text-amber-600 bg-amber-100' },
-      { label: 'Aprovados', value: String(approved), icon: CheckCircle, tone: 'text-emerald-600 bg-emerald-100' },
-      { label: 'Cancelados', value: String(cancelled), icon: XCircle, tone: 'text-red-600 bg-red-100' },
+      { label: 'Total', value: total, icon: Package, tone: 'text-blue-600 bg-blue-100' },
+      { label: 'Pendentes', value: pending, icon: Clock, tone: 'text-amber-600 bg-amber-100' },
+      { label: 'Aprovados', value: approved, icon: CheckCircle, tone: 'text-emerald-600 bg-emerald-100' },
+      { label: 'Cancelados', value: cancelled, icon: XCircle, tone: 'text-red-600 bg-red-100' },
       { label: 'Valor (pág.)', value: formatCurrency(value), icon: DollarSign, tone: 'text-violet-600 bg-violet-100' },
-      { label: 'Itens (pág.)', value: String(items), icon: BarChart3, tone: 'text-indigo-600 bg-indigo-100' },
+      { label: 'Itens (pág.)', value: itemsCount, icon: BarChart3, tone: 'text-cyan-600 bg-cyan-100' },
     ];
   }, [orders, total]);
+
+  const customerName = (id?: string | null) => (id ? customerMap[id] ?? id.slice(0, 8) : '—');
+  const productName = (id: string) => productMap[id] ?? id.slice(0, 8);
+
+  const openDetail = async (order: Order) => {
+    setDetail(order);
+    try {
+      const full = await api.get<Order>(`/orders/${order.id}`);
+      setDetail(full);
+    } catch {
+      // mantém o item da lista
+    }
+  };
 
   const openTransition = (order: Order, to: OrderStatus) => {
     setTransitionTarget(order);
@@ -100,42 +134,32 @@ export default function CompanyOrdersPage() {
       });
       toast.success('Status do pedido atualizado.');
       setTransitionTarget(null);
-      setTransitionTo(null);
       load();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Erro ao atualizar o pedido.');
+      setActionError(err instanceof ApiError ? err.message : 'Erro ao atualizar o status.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div>
-      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Relatório de Pedidos</h1>
-          <p className="mt-1 text-muted-foreground">Consulte, filtre e gerencie os pedidos da plataforma.</p>
-        </div>
-      </div>
-
-      {/* KPIs */}
-      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {kpis.map((k) => (
           <Card key={k.label}>
             <CardContent className="flex items-center gap-4 p-5">
               <div className={`rounded-xl p-3 ${k.tone}`}><k.icon className="h-5 w-5" /></div>
-              <div>
-                <p className="text-sm text-muted-foreground">{k.label}</p>
-                <p className="text-2xl font-bold">{k.value}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm text-muted-foreground">{k.label}</p>
+                <p className="truncate text-xl font-bold">{k.value}</p>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Filtros */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative max-w-md flex-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
@@ -154,7 +178,7 @@ export default function CompanyOrdersPage() {
               <SelectItem value="approved">Aprovado</SelectItem>
               <SelectItem value="processing">Em Processamento</SelectItem>
               <SelectItem value="invoiced">Faturado</SelectItem>
-              <SelectItem value="shipped">Enviado</SelectItem>
+              <SelectItem value="shipped">Enviado / Trânsito</SelectItem>
               <SelectItem value="completed">Concluído</SelectItem>
               <SelectItem value="cancelled">Cancelado</SelectItem>
             </SelectContent>
@@ -172,16 +196,14 @@ export default function CompanyOrdersPage() {
           {loading ? (
             <p className="py-10 text-center text-muted-foreground">Carregando…</p>
           ) : orders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-              <Package className="mb-4 h-12 w-12 text-muted-foreground/30" />
-              <h3 className="text-lg font-semibold text-muted-foreground">Nenhum pedido encontrado</h3>
-            </div>
+            <p className="py-10 text-center text-muted-foreground">Nenhum pedido encontrado.</p>
           ) : (
             <>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Pedido</TableHead>
+                    <TableHead>Cliente</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Total</TableHead>
@@ -194,23 +216,29 @@ export default function CompanyOrdersPage() {
                     return (
                       <TableRow key={order.id}>
                         <TableCell className="font-medium">#{order.number}</TableCell>
+                        {/* ✅ BUG 6: nome do cliente em vez do ID */}
+                        <TableCell className="text-muted-foreground">{customerName(order.customer_id)}</TableCell>
                         <TableCell className="text-muted-foreground">{formatDate(order.created_at)}</TableCell>
                         <TableCell>
                           <Badge className={orderStatusClass(order.status)}>{orderStatusLabel(order.status)}</Badge>
                         </TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(order.total)}</TableCell>
                         <TableCell className="text-right">
-                          {transitions.length > 0 ? (
-                            <div className="flex justify-end gap-1">
-                              {transitions.slice(0, 2).map((t) => (
-                                <Button key={t.to} size="sm" variant="outline" onClick={() => openTransition(order, t.to)}>
-                                  {t.label}
-                                </Button>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                          <div className="flex justify-end gap-1">
+                            <Button size="icon" variant="ghost" aria-label="Ver itens" onClick={() => openDetail(order)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {transitions.map((t) => (
+                              <Button
+                                key={t.to}
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openTransition(order, t.to)}
+                              >
+                                {t.label}
+                              </Button>
+                            ))}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -231,13 +259,53 @@ export default function CompanyOrdersPage() {
         </CardContent>
       </Card>
 
-      {/* Modal de transição de status */}
-      <Dialog open={!!transitionTarget && !!transitionTo} onOpenChange={(o) => { if (!o) { setTransitionTarget(null); setTransitionTo(null); } }}>
+      {/* Detalhe do pedido (itens por nome) */}
+      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) setDetail(null); }}>
+        <DialogContent className="max-w-lg">
+          {detail && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Pedido #{detail.number} · {customerName(detail.customer_id)}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Badge className={orderStatusClass(detail.status)}>{orderStatusLabel(detail.status)}</Badge>
+                  <span className="font-bold">{formatCurrency(detail.total)}</span>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produto</TableHead>
+                      <TableHead>Qtd</TableHead>
+                      <TableHead className="text-right">Unitário</TableHead>
+                      <TableHead className="text-right">Subtotal</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.items.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">{productName(item.product_id)}</TableCell>
+                        <TableCell>{Math.round(Number(item.quantity))}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(Number(item.unit_price))}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(Number(item.subtotal))}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {detail.notes && <p className="text-sm text-muted-foreground">Obs.: {detail.notes}</p>}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Transição de status */}
+      <Dialog open={!!transitionTarget && !!transitionTo} onOpenChange={(o) => { if (!o) setTransitionTarget(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {transitionTarget && transitionTo
-                ? `${COMPANY_ORDER_TRANSITIONS.find((t) => t.to === transitionTo)?.label ?? 'Atualizar'} — Pedido #${transitionTarget.number}`
+              {transitionTo
+                ? `${COMPANY_ORDER_TRANSITIONS.find((t) => t.to === transitionTo)?.label ?? 'Atualizar'} — Pedido #${transitionTarget?.number}`
                 : 'Atualizar pedido'}
             </DialogTitle>
           </DialogHeader>
@@ -252,21 +320,18 @@ export default function CompanyOrdersPage() {
                 <Badge className={orderStatusClass(transitionTo)}>{orderStatusLabel(transitionTo)}</Badge>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="order-note">Nota explicativa</Label>
+                <Label htmlFor="transition-note">Nota (opcional)</Label>
                 <Textarea
-                  id="order-note"
-                  rows={3}
+                  id="transition-note"
+                  rows={2}
+                  maxLength={500}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="Opcional. Ex.: aprovado conforme negociação."
-                  maxLength={500}
+                  placeholder="Observação sobre a mudança de status…"
                 />
               </div>
               {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
               <DialogFooter>
-                <Button variant="outline" onClick={() => { setTransitionTarget(null); setTransitionTo(null); }} disabled={saving}>
-                  Cancelar
-                </Button>
                 <Button onClick={confirmTransition} disabled={saving}>
                   {saving ? 'Salvando…' : 'Confirmar'}
                 </Button>

@@ -2,15 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Package } from 'lucide-react';
 import { api } from '../../lib/api';
-import type { Order, OrderPage } from '@/types/api';
+import type { Order, OrderPage, ProductPage } from '@/types/api';
 import { orderStatusClass, orderStatusLabel } from '../../lib/orderStatus';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from '../../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { Separator } from '../../components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 
@@ -24,6 +22,25 @@ export default function ClientOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Order | null>(null);
+  // ✅ BUG 6: mapa de NOMES dos produtos (OrderItem só traz product_id).
+  const [productMap, setProductMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const data = await api.get<ProductPage>('/catalog/products', { page: 1, page_size: 100 });
+        const map: Record<string, string> = {};
+        for (const p of data.items) map[p.id] = p.name;
+        if (active) setProductMap(map);
+      } catch {
+        // fallback: mantém o ID truncado.
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const productName = (id: string) => productMap[id] ?? id.slice(0, 8);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,7 +113,11 @@ export default function ClientOrdersPage() {
                   </div>
                   <div className="text-right">
                     <p className="font-bold">{formatCurrency(order.total)}</p>
-                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openDetail(order); }}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); openDetail(order); }}
+                    >
                       Ver detalhes
                     </Button>
                   </div>
@@ -117,10 +138,11 @@ export default function ClientOrdersPage() {
                     <TableBody>
                       {order.items.map((item) => (
                         <TableRow key={item.id}>
-                          <TableCell className="font-medium">{item.product_id}</TableCell>
-                          <TableCell>{item.quantity}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.subtotal)}</TableCell>
+                          {/* ✅ BUG 6: nome do produto em vez do ID */}
+                          <TableCell className="font-medium">{productName(item.product_id)}</TableCell>
+                          <TableCell>{Math.round(Number(item.quantity))}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(Number(item.unit_price))}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(Number(item.subtotal))}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -143,7 +165,7 @@ export default function ClientOrdersPage() {
         </div>
       )}
 
-      {/* Detalhe com histórico de status */}
+      {/* Detalhe */}
       <Dialog open={!!detail} onOpenChange={(o) => { if (!o) setDetail(null); }}>
         <DialogContent className="max-w-lg">
           {detail && (
@@ -167,9 +189,9 @@ export default function ClientOrdersPage() {
                   <TableBody>
                     {detail.items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.product_id}</TableCell>
-                        <TableCell>{item.quantity}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(item.subtotal)}</TableCell>
+                        <TableCell className="font-medium">{productName(item.product_id)}</TableCell>
+                        <TableCell>{Math.round(Number(item.quantity))}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(Number(item.subtotal))}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

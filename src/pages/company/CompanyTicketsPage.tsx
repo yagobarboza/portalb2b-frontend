@@ -11,7 +11,7 @@ import {
 } from '../../lib/ticketStatus';
 import { formatDateTime } from '../../lib/format';
 import type {
-  Ticket, TicketDetail, TicketPriority, TicketStatus, UserPage,
+  CustomerPage, Ticket, TicketDetail, TicketPriority, TicketStatus, UserPage,
 } from '@/types/api';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -33,29 +33,22 @@ const PAGE_SIZE = 20;
 
 export default function CompanyTicketsPage() {
   const { user } = useAuth();
-
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
-
-  // Filtros
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | TicketStatus>('all');
   const [filterPriority, setFilterPriority] = useState<'all' | TicketPriority>('all');
-
-  // Atendentes (para atribuição)
   const [assignees, setAssignees] = useState<UserPage['items']>([]);
-
-  // Detalhe
+  // Mapas de nomes (cliente = empresa compradora; atendentes).
+  const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [message, setMessage] = useState('');
   const [isInternal, setIsInternal] = useState(false);
   const [sending, setSending] = useState(false);
-
-  // Ações de gestão
   const [newStatus, setNewStatus] = useState<TicketStatus | ''>('');
   const [newAssignee, setNewAssignee] = useState<string>('');
   const [savingAction, setSavingAction] = useState(false);
@@ -67,19 +60,36 @@ export default function CompanyTicketsPage() {
     return () => window.clearTimeout(t);
   }, [search]);
 
-  // Carrega atendentes do tenant p/ o select de atribuição (GET /users).
+  // Carrega atendentes (para atribuição) + clientes (para nomes).
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const data = await api.get<UserPage>('/users', { page: 1, page_size: 100 });
-        if (active) setAssignees(data.items);
+        const users = await api.get<UserPage>('/users', { page: 1, page_size: 100 });
+        if (active) {
+          setAssignees(users.items.filter((u: UserPage['items'][number]) => !u.roles?.includes('cliente')));
+        }
       } catch {
-        // Falha aqui não derruba a página; atribuição fica indisponível.
+        // Falha aqui não derruba a página.
+      }
+      try {
+        const cust = await api.get<CustomerPage>('/customers', { page: 1, page_size: 100 });
+        const cm: Record<string, string> = {};
+        for (const c of cust.items) cm[c.id] = c.name;
+        if (active) setCustomerMap(cm);
+      } catch {
+        // Falha aqui não derruba a página.
       }
     })();
     return () => { active = false; };
   }, []);
+
+  // Mapa de nomes dos atendentes (do state assignees).
+  const assigneeNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const u of assignees) map[u.id] = u.full_name;
+    return map;
+  }, [assignees]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,13 +97,13 @@ export default function CompanyTicketsPage() {
       const data = await listTickets({
         page,
         page_size: PAGE_SIZE,
-        // O backend filtra por tenant; passamos apenas o que ele suporta.
         ...(filterStatus !== 'all' ? { status: filterStatus } : {}),
         ...(filterPriority !== 'all' ? { priority: filterPriority } : {}),
       });
       setTickets(data.items);
       setTotal(data.total);
-      setPages(Math.ceil(data.total / data.page_size) || 1);
+      // TicketPage não tem "pages" — calcula a partir do total.
+      setPages(Math.max(1, Math.ceil(data.total / PAGE_SIZE)));
     } catch {
       toast.error('Não foi possível carregar os chamados.');
     } finally {
@@ -104,30 +114,26 @@ export default function CompanyTicketsPage() {
   useEffect(() => { load(); }, [load]);
 
   const openTicket = async (t: Ticket) => {
-    setActionError(null);
-    setMessage('');
-    setIsInternal(false);
-    setNewStatus('');
-    setNewAssignee('');
     try {
       const full = await getTicket(t.id);
       setDetail(full);
-    } catch {
-      toast.error('Não foi possível abrir o chamado.');
+      setActionError(null);
+      setNewStatus('');
+      setNewAssignee('');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao abrir o chamado.');
     }
   };
 
-  const submitMessage = async (e: React.FormEvent) => {
+  const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!detail || sending) return;
-    if (message.trim().length === 0) return;
+    if (!detail || !message.trim() || sending) return;
     setSending(true);
     try {
-      // Empresa pode enviar pública OU interna (is_internal=true → só a equipe vê).
       await sendTicketMessage(detail.id, message.trim(), isInternal);
       setMessage('');
-      setIsInternal(false);
-      setDetail(await getTicket(detail.id));
+      const full = await getTicket(detail.id);
+      setDetail(full);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Erro ao enviar mensagem.');
     } finally {
@@ -135,24 +141,24 @@ export default function CompanyTicketsPage() {
     }
   };
 
-  const applyStatus = async () => {
+  const saveStatus = async () => {
     if (!detail || !newStatus || savingAction) return;
     setSavingAction(true);
     setActionError(null);
     try {
       await updateTicketStatus(detail.id, newStatus);
-      toast.success('Status do chamado atualizado.');
+      toast.success('Status atualizado.');
       setDetail(await getTicket(detail.id));
       setNewStatus('');
       load();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Erro ao atualizar o status.');
+      setActionError(err instanceof ApiError ? err.message : 'Erro ao atualizar status.');
     } finally {
       setSavingAction(false);
     }
   };
 
-  const applyAssignee = async () => {
+  const saveAssignee = async () => {
     if (!detail || !newAssignee || savingAction) return;
     setSavingAction(true);
     setActionError(null);
@@ -161,6 +167,7 @@ export default function CompanyTicketsPage() {
       toast.success('Responsável atribuído.');
       setDetail(await getTicket(detail.id));
       setNewAssignee('');
+      load();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Erro ao atribuir responsável.');
     } finally {
@@ -171,39 +178,30 @@ export default function CompanyTicketsPage() {
   const filtered = useMemo(() => {
     const term = searchDebounced.toLowerCase();
     if (!term) return tickets;
-    return tickets.filter(
-      (t) =>
-        t.number.toLowerCase().includes(term) ||
-        t.title.toLowerCase().includes(term) ||
-        (t.category ?? '').toLowerCase().includes(term)
+    return tickets.filter((t) =>
+      t.title.toLowerCase().includes(term) ||
+      t.number.toLowerCase().includes(term) ||
+      customerMap[t.customer_id ?? '']?.toLowerCase().includes(term)
     );
-  }, [tickets, searchDebounced]);
+  }, [tickets, searchDebounced, customerMap]);
+
+  const customerName = (id?: string | null) => (id ? customerMap[id] ?? id.slice(0, 8) : '—');
 
   return (
-    <div>
-      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Central de Atendimento</h1>
-          <p className="mt-1 text-muted-foreground">Chamados de suporte do seu tenant.</p>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       {/* Filtros */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative max-w-md flex-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Buscar por número, título ou categoria…"
+            placeholder="Buscar por título, nº ou cliente…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
-        <div className="w-full sm:w-44">
-          <Select
-            value={filterStatus}
-            onValueChange={(v) => { setFilterStatus(v as 'all' | TicketStatus); setPage(1); }}
-          >
+        <div className="w-full sm:w-48">
+          <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v as 'all' | TicketStatus); setPage(1); }}>
             <SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os status</SelectItem>
@@ -216,11 +214,8 @@ export default function CompanyTicketsPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="w-full sm:w-44">
-          <Select
-            value={filterPriority}
-            onValueChange={(v) => { setFilterPriority(v as 'all' | TicketPriority); setPage(1); }}
-          >
+        <div className="w-full sm:w-48">
+          <Select value={filterPriority} onValueChange={(v) => { setFilterPriority(v as 'all' | TicketPriority); setPage(1); }}>
             <SelectTrigger className="w-full"><SelectValue placeholder="Prioridade" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas as prioridades</SelectItem>
@@ -243,8 +238,8 @@ export default function CompanyTicketsPage() {
           {loading ? (
             <p className="py-10 text-center text-muted-foreground">Carregando…</p>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-              <TicketIcon className="mb-4 h-12 w-12 text-muted-foreground/30" />
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <TicketIcon className="mb-3 h-10 w-10 text-muted-foreground/40" />
               <h3 className="text-lg font-semibold text-muted-foreground">Nenhum chamado encontrado</h3>
             </div>
           ) : (
@@ -267,7 +262,7 @@ export default function CompanyTicketsPage() {
                         #{t.number}
                         <span className="block max-w-[260px] truncate text-xs text-muted-foreground">{t.title}</span>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{t.customer_id ?? '—'}</TableCell>
+                      <TableCell className="text-muted-foreground">{customerName(t.customer_id)}</TableCell>
                       <TableCell>
                         <Badge className={ticketPriorityClass(t.priority)}>{ticketPriorityLabel(t.priority)}</Badge>
                       </TableCell>
@@ -276,7 +271,12 @@ export default function CompanyTicketsPage() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatDateTime(t.updated_at)}</TableCell>
                       <TableCell className="text-right">
-                        <Button size="icon" variant="ghost" aria-label="Abrir chamado" onClick={(e) => { e.stopPropagation(); openTicket(t); }}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Abrir chamado"
+                          onClick={(e) => { e.stopPropagation(); openTicket(t); }}
+                        >
                           <MoreVertical className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -298,9 +298,9 @@ export default function CompanyTicketsPage() {
         </CardContent>
       </Card>
 
-      {/* Detalhe do chamado (empresa) */}
+      {/* Detalhe do chamado */}
       <Dialog open={!!detail} onOpenChange={(o) => { if (!o) { setDetail(null); setActionError(null); } }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
           {detail && (
             <>
               <DialogHeader>
@@ -311,81 +311,49 @@ export default function CompanyTicketsPage() {
                 <Badge className={ticketPriorityClass(detail.priority)}>{ticketPriorityLabel(detail.priority)}</Badge>
                 <Badge className={ticketStatusClass(detail.status)}>{ticketStatusLabel(detail.status)}</Badge>
                 {detail.category && <Badge variant="secondary">{detail.category}</Badge>}
-                {detail.assignee_id && <Badge variant="outline">Resp.: {detail.assignee_id.slice(0, 8)}…</Badge>}
-              </div>
-
-              {/* Thread — empresa vê inclusive notas internas (is_internal) */}
-              <div className="mt-4 max-h-72 space-y-2 overflow-auto rounded-md border p-3">
-                {detail.messages.length === 0 && (
-                  <p className="text-center text-sm text-muted-foreground">Nenhuma mensagem ainda.</p>
+                {detail.assignee_id && (
+                  <Badge variant="outline">Resp.: {assigneeNameMap[detail.assignee_id] ?? detail.assignee_id.slice(0, 8)}</Badge>
                 )}
-                {detail.messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`rounded-md p-3 ${msg.is_internal ? 'border border-amber-200 bg-amber-50' : 'bg-muted/40'}`}
-                  >
-                    <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">
-                        {msg.is_internal
-                          ? 'Nota interna'
-                          : msg.author_customer_id
-                            ? 'Cliente'
-                            : msg.author_user_id === user?.id
-                              ? 'Você'
-                              : 'Atendente'}
-                      </span>
-                      {msg.is_internal && <Badge variant="secondary" className="text-[10px]">só equipe</Badge>}
-                      <span>· {formatDateTime(msg.created_at)}</span>
-                    </p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm">{msg.content}</p>
-                  </div>
-                ))}
               </div>
 
-              {/* Controles de gestão (apenas empresa — backend revalida) */}
-              <div className="grid gap-3 rounded-md border p-3 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="t-status">Alterar status</Label>
-                  <div className="flex gap-2">
-                    <Select value={newStatus || 'none'} onValueChange={(v) => setNewStatus(v === 'none' ? '' : (v as TicketStatus))}>
-                      <SelectTrigger id="t-status" className="flex-1"><SelectValue placeholder="Novo status" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Selecione…</SelectItem>
-                        <SelectItem value="under_review">Em Análise</SelectItem>
-                        <SelectItem value="awaiting_customer">Aguardando Cliente</SelectItem>
-                        <SelectItem value="resolved">Resolvido</SelectItem>
-                        <SelectItem value="closed">Fechado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button variant="outline" onClick={applyStatus} disabled={savingAction || !newStatus}>
-                      Aplicar
-                    </Button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="t-assignee">Atribuir responsável</Label>
-                  <div className="flex gap-2">
-                    <Select value={newAssignee || 'none'} onValueChange={(v) => setNewAssignee(v === 'none' ? '' : v)}>
-                      <SelectTrigger id="t-assignee" className="flex-1"><SelectValue placeholder="Atendente" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Selecione…</SelectItem>
-                        {assignees.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>{a.full_name || a.email}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button variant="outline" onClick={applyAssignee} disabled={savingAction || !newAssignee}>
-                      <UserCog className="mr-1 h-4 w-4" />Atribuir
-                    </Button>
-                  </div>
-                </div>
+              <p className="text-sm text-muted-foreground">
+                Aberto por:{' '}
+                <strong>{detail.customer_id ? customerName(detail.customer_id) : 'Equipe interna'}</strong>
+                {' '}· {formatDateTime(detail.created_at)}
+              </p>
+              {detail.description && <p className="text-sm">{detail.description}</p>}
+
+              {/* Mensagens */}
+              <div className="space-y-3">
+                {detail.messages.map((msg) => {
+                  let author = 'Equipe';
+                  if (msg.author_customer_id) {
+                    author = customerName(msg.author_customer_id);
+                  } else if (msg.author_user_id) {
+                    author = msg.author_user_id === user?.id
+                      ? 'Você'
+                      : assigneeNameMap[msg.author_user_id] ?? 'Equipe';
+                  }
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`rounded-md border p-3 ${msg.is_internal ? 'bg-amber-50' : 'bg-muted/30'}`}
+                    >
+                      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="font-medium">
+                          {msg.is_internal ? 'Nota interna' : author}
+                        </span>
+                        <span>{formatDateTime(msg.created_at)}</span>
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    </div>
+                  );
+                })}
               </div>
 
-              {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
-
-              {/* Responder — com alternador de nota interna (is_internal) */}
-              <form onSubmit={submitMessage} className="space-y-2">
-                <div className="flex items-center gap-3">
+              {/* Resposta */}
+              <form onSubmit={sendMessage} className="space-y-2 border-t pt-3">
+                <div className="flex items-center gap-2">
                   <Label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -393,23 +361,57 @@ export default function CompanyTicketsPage() {
                       checked={isInternal}
                       onChange={(e) => setIsInternal(e.target.checked)}
                     />
-                    Nota interna (visível apenas para a equipe)
+                    Nota interna (só a equipe vê)
                   </Label>
                 </div>
-                <div className="flex gap-2">
-                  <Textarea
-                    className="min-h-[60px] flex-1"
-                    rows={2}
-                    placeholder={isInternal ? 'Escreva uma nota interna…' : 'Escreva uma resposta ao cliente…'}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    maxLength={4000}
-                  />
-                  <Button type="submit" disabled={sending || message.trim().length === 0}>
-                    {sending ? 'Enviando…' : 'Enviar'}
+                <Textarea
+                  rows={2}
+                  maxLength={4000}
+                  placeholder={isInternal ? 'Escreva uma nota interna…' : 'Escreva uma resposta ao cliente…'}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                />
+                <Button type="submit" disabled={sending || message.trim().length === 0}>
+                  {sending ? 'Enviando…' : 'Enviar'}
+                </Button>
+              </form>
+
+              {/* Gestão */}
+              <div className="grid gap-3 border-t pt-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="t-status">Alterar status</Label>
+                  <Select value={newStatus || 'none'} onValueChange={(v) => setNewStatus(v === 'none' ? '' : (v as TicketStatus))}>
+                    <SelectTrigger id="t-status" className="w-full"><SelectValue placeholder="Novo status" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Selecione…</SelectItem>
+                      <SelectItem value="under_review">Em Análise</SelectItem>
+                      <SelectItem value="awaiting_customer">Aguardando Cliente</SelectItem>
+                      <SelectItem value="resolved">Resolvido</SelectItem>
+                      <SelectItem value="closed">Fechado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" onClick={saveStatus} disabled={!newStatus || savingAction}>
+                    Aplicar status
                   </Button>
                 </div>
-              </form>
+                <div className="space-y-2">
+                  <Label htmlFor="t-assignee">Atribuir responsável</Label>
+                  <Select value={newAssignee || 'none'} onValueChange={(v) => setNewAssignee(v === 'none' ? '' : v)}>
+                    <SelectTrigger id="t-assignee" className="w-full"><SelectValue placeholder="Responsável" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Selecione…</SelectItem>
+                      {assignees.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.full_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" onClick={saveAssignee} disabled={!newAssignee || savingAction}>
+                    <UserCog className="mr-2 h-4 w-4" />Atribuir
+                  </Button>
+                </div>
+              </div>
+
+              {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
             </>
           )}
         </DialogContent>

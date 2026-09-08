@@ -13,7 +13,13 @@ import { ScrollArea } from '../../components/ui/scroll-area';
 
 const PAGE_SIZE = 50;
 
+// ✅ 5b: slugs da API em inglês + compatibilidade com os antigos.
 const SECTOR_LABELS: Record<string, string> = {
+  sales: 'Vendas',
+  commercial: 'Comercial',
+  financial: 'Financeiro',
+  support: 'Suporte',
+  service: 'Serviços',
   comercial: 'Comercial',
   financeiro: 'Financeiro',
   suporte: 'Suporte',
@@ -40,11 +46,9 @@ export default function ClientChatPage() {
     roomId: selected?.id ?? null,
     enabled: !!selected,
     onMessage: (msg) => {
-      // Normaliza ChatWsMessage → ChatMessage (created_at nunca null no estado).
       setMessages((prev) =>
         prev.some((m) => m.id === msg.id) ? prev : [...prev, toChatMessage(msg)]
       );
-      // Marca leitura quando o outro lado envia.
       if (selected && msg.sender_type !== 'customer') {
         api.post(`/chat/rooms/${selected.id}/read`).catch(() => {});
       }
@@ -119,19 +123,27 @@ export default function ClientChatPage() {
     }
   };
 
+  // ✅ 5b: lado cliente — "Você" para as próprias mensagens e "Atendimento"
+  // para as da empresa (o cliente não tem acesso à lista de usuários).
+  const senderName = (m: ChatMessage) => {
+    if (m.sender_type === 'system') return 'Sistema';
+    if (m.sender_user_id) return 'Atendimento';
+    return 'Você';
+  };
+
   const sectorLabel = (s: string | null) => SECTOR_LABELS[s ?? ''] ?? 'Atendimento';
   const statusLabel = (s: string | null) => ROOM_STATUS_LABEL[s ?? 'open'] ?? (s ?? 'open');
   const isClosed = selected?.status === 'closed';
 
-  // ── Tela da conversa aberta
+  // ── Chat aberto
   if (selected) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="mb-6 flex items-center gap-3">
+      <div className="mx-auto max-w-4xl px-4 py-8">
+        <div className="mb-4 flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Voltar">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h1 className="flex items-center gap-2 text-xl font-bold">
               <MessageCircle className="h-5 w-5 text-primary" />
               {sectorLabel(selected.sector)}
@@ -152,29 +164,16 @@ export default function ClientChatPage() {
           </div>
 
           <ScrollArea className="h-[480px] px-4 py-4">
-            <div className="space-y-4" ref={scrollRef}>
-              {messages.length === 0 && (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  Nenhuma mensagem ainda. Envie a primeira!
-                </p>
-              )}
-              {messages.map((msg) => {
-                const mine = msg.sender_type === 'customer';
+            <div ref={scrollRef} className="space-y-3">
+              {messages.map((m) => {
+                const own = !m.sender_user_id;
                 return (
-                  <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                    <div className="max-w-[75%]">
-                      <div
-                        className={`rounded-2xl px-4 py-2.5 shadow-sm ${
-                          mine
-                            ? 'rounded-br-sm bg-primary text-primary-foreground'
-                            : 'rounded-bl-sm bg-muted text-foreground'
-                        }`}
-                      >
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
-                      </div>
-                      <p className={`mt-1 text-[10px] text-muted-foreground ${mine ? 'text-right' : ''}`}>
-                        {formatDateTime(msg.created_at)}
-                      </p>
+                  <div key={m.id} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] rounded-lg border px-3 py-2 ${own ? 'bg-primary/10' : 'bg-muted/30'}`}>
+                      {/* ✅ 5b: nome do remetente ("Você" / "Atendimento") */}
+                      <p className="mb-0.5 text-xs font-medium text-muted-foreground">{senderName(m)}</p>
+                      <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                      <p className="mt-1 text-right text-[10px] text-muted-foreground">{formatDateTime(m.created_at)}</p>
                     </div>
                   </div>
                 );
@@ -197,7 +196,7 @@ export default function ClientChatPage() {
               </Button>
             </div>
           ) : (
-            <div className="border-t p-4 text-center text-sm text-muted-foreground">Conversa encerrada</div>
+            <p className="border-t p-3 text-center text-sm text-muted-foreground">Conversa encerrada.</p>
           )}
         </Card>
       </div>
@@ -230,20 +229,17 @@ export default function ClientChatPage() {
         <div className="space-y-3">
           {rooms.map((room) => (
             <Card key={room.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openExisting(room)}>
-              <div className="flex items-center gap-3 p-4">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/10">
-                  <MessageCircle className="h-5 w-5 text-primary" />
-                </div>
-                <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-3 p-4">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-sm">{sectorLabel(room.sector)}</h3>
+                    <h3 className="truncate font-semibold">{sectorLabel(room.sector)}</h3>
                     <Badge variant="outline" className="text-[10px]">{statusLabel(room.status)}</Badge>
                   </div>
                   <p className="truncate text-sm text-muted-foreground">
                     Conversa iniciada em {formatDate(room.created_at)}
                   </p>
                 </div>
-                <Button size="sm" variant="ghost">Abrir</Button>
+                <MessageCircle className="h-5 w-5 shrink-0 text-muted-foreground/50" />
               </div>
             </Card>
           ))}

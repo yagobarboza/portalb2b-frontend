@@ -3,13 +3,15 @@ import { toast } from 'sonner';
 import { ArrowLeft, MessageCircle, Send } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { toChatMessage, useChatWebSocket } from '../../lib/websocket';
-import type { ChatMessage, ChatMessagePage, ChatRoom } from '@/types/api';
-import { formatDate, formatDateTime } from '../../lib/format';
+import type {
+  ChatMessage, ChatMessagePage, ChatRoom, CustomerPage, UserPage,
+} from '@/types/api';
+import { formatDateTime } from '../../lib/format';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
-import { ScrollArea } from '../../components/ui/scroll-area';
+import { Label } from '../../components/ui/label';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../../components/ui/dialog';
@@ -19,7 +21,13 @@ import {
 
 const PAGE_SIZE = 50;
 
+// Rótulos aceitam os slugs EM INGLÊS da API e os antigos em português.
 const SECTOR_LABELS: Record<string, string> = {
+  sales: 'Vendas',
+  commercial: 'Comercial',
+  financial: 'Financeiro',
+  support: 'Suporte',
+  service: 'Serviços',
   comercial: 'Comercial',
   financeiro: 'Financeiro',
   suporte: 'Suporte',
@@ -38,23 +46,46 @@ export default function CompanyChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-
   const [filterSector, setFilterSector] = useState<'all' | string>('all');
   const [search, setSearch] = useState('');
-
   const [transferTarget, setTransferTarget] = useState<ChatRoom | null>(null);
   const [transferSector, setTransferSector] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
-
+  const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
+  const [userMap, setUserMap] = useState<Record<string, string>>({});
+  // ✅ O ref precisa estar NO ELEMENTO ROLÁVEL (div com overflow-y-auto),
+  // não num div dentro de um ScrollArea (cujo viewport interno esconde o scroll).
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Recepção em tempo real via WebSocket (status não exibido nesta tela).
+  // Carrega nomes de clientes e membros da equipe.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const cust = await api.get<CustomerPage>('/customers', { page: 1, page_size: 100 });
+        const cm: Record<string, string> = {};
+        for (const c of cust.items) cm[c.id] = c.name;
+        if (active) setCustomerMap(cm);
+      } catch {
+        // não derruba a página
+      }
+      try {
+        const users = await api.get<UserPage>('/users', { page: 1, page_size: 100 });
+        const um: Record<string, string> = {};
+        for (const u of users.items) um[u.id] = u.full_name;
+        if (active) setUserMap(um);
+      } catch {
+        // não derruba a página
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
   useChatWebSocket({
     roomId: selected?.id ?? null,
     enabled: !!selected,
     onMessage: (msg) => {
-      // Normaliza ChatWsMessage → ChatMessage (created_at nunca null no estado).
       setMessages((prev) =>
         prev.some((m) => m.id === msg.id) ? prev : [...prev, toChatMessage(msg)]
       );
@@ -92,9 +123,14 @@ export default function CompanyChatPage() {
     }
   };
 
+  // ✅ Auto-scroll para a ÚLTIMA/mensagem mais recente assim que as
+  // mensagens mudam (abertura, envio, recebimento via websocket).
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const el = scrollRef.current;
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
     }
   }, [messages, selected?.id]);
 
@@ -133,16 +169,26 @@ export default function CompanyChatPage() {
     }
   };
 
+  const customerName = (id?: string | null) => (id ? customerMap[id] ?? id.slice(0, 8) : '—');
+
+  const senderName = (m: ChatMessage) => {
+    if (m.sender_type === 'system') return 'Sistema';
+    if (m.sender_user_id) return userMap[m.sender_user_id] ?? 'Equipe';
+    if (m.sender_customer_id) return customerMap[m.sender_customer_id] ?? 'Cliente';
+    return 'Equipe';
+  };
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return rooms.filter((r) => {
       const matchSector = filterSector === 'all' || r.sector === filterSector;
       const matchSearch =
         !term ||
+        customerName(r.customer_id).toLowerCase().includes(term) ||
         (SECTOR_LABELS[r.sector ?? ''] ?? r.sector ?? '').toLowerCase().includes(term);
       return matchSector && matchSearch;
     });
-  }, [rooms, filterSector, search]);
+  }, [rooms, filterSector, search, customerMap]);
 
   const sectorLabel = (s: string | null) => SECTOR_LABELS[s ?? ''] ?? s ?? 'Atendimento';
   const statusLabel = (s: string | null) => ROOM_STATUS_LABEL[s ?? 'open'] ?? s ?? 'open';
@@ -163,125 +209,93 @@ export default function CompanyChatPage() {
           <div className="mb-3 space-y-2">
             <Input
               className="h-9"
-              placeholder="Buscar conversa por setor…"
+              placeholder="Buscar conversa por cliente ou setor…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <Select value={filterSector} onValueChange={(v) => setFilterSector(v)}>
+            <Select value={filterSector} onValueChange={(v) => setFilterSector(v === 'all' ? 'all' : v)}>
               <SelectTrigger className="h-9 w-full"><SelectValue placeholder="Setor" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os setores</SelectItem>
-                {Object.entries(SECTOR_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                {Object.keys(SECTOR_LABELS).map((s) => (
+                  <SelectItem key={s} value={s}>{SECTOR_LABELS[s]}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <Card className="flex-1 overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="p-2">
-                {loading ? (
-                  <p className="p-8 text-center text-sm text-muted-foreground">Carregando…</p>
-                ) : filtered.length === 0 ? (
-                  <p className="p-8 text-center text-sm text-muted-foreground">Nenhuma conversa encontrada</p>
-                ) : (
-                  filtered.map((room) => (
+          <Card className="flex min-h-0 flex-1 flex-col">
+            {/* ✅ Scroll nativo na lista de conversas */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loading ? (
+                <p className="p-6 text-center text-sm text-muted-foreground">Carregando…</p>
+              ) : filtered.length === 0 ? (
+                <p className="p-6 text-center text-sm text-muted-foreground">Nenhuma conversa.</p>
+              ) : (
+                <div className="p-2">
+                  {filtered.map((room) => (
                     <button
                       key={room.id}
+                      type="button"
+                      className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/50 ${selected?.id === room.id ? 'bg-muted/70' : ''}`}
                       onClick={() => openRoom(room)}
-                      className={`mb-1 w-full rounded-lg border p-3 text-left transition-colors ${
-                        selected?.id === room.id
-                          ? 'border-primary/30 bg-primary/10'
-                          : 'border-transparent hover:bg-muted'
-                      }`}
                     >
-                      <div className="flex items-start gap-2">
-                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-primary">
-                          <MessageCircle className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="truncate text-sm font-medium">{sectorLabel(room.sector)}</span>
-                            <span className="flex-shrink-0 text-[10px] text-muted-foreground">
-                              {formatDate(room.created_at)}
-                            </span>
-                          </div>
-                          <div className="mt-1 flex items-center gap-1.5">
-                            <span className="text-[10px] text-muted-foreground">{statusLabel(room.status)}</span>
-                            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
-                            <span className="text-[10px] text-muted-foreground">
-                              Cliente {room.customer_id?.slice(0, 8)}
-                            </span>
-                          </div>
-                        </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{customerName(room.customer_id)}</span>
+                        <Badge variant="outline" className="text-[10px]">{sectorLabel(room.sector)}</Badge>
                       </div>
+                      {room.status !== 'open' && (
+                        <span className="text-[10px] text-muted-foreground">{statusLabel(room.status)}</span>
+                      )}
                     </button>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
+                  ))}
+                </div>
+              )}
+            </div>
           </Card>
         </div>
 
         {/* Chat aberto */}
-        {selected ? (
-          <div className="flex min-w-0 flex-1 flex-col">
-            <Card className="flex min-h-0 flex-1 flex-col">
-              <div className="flex items-center gap-3 border-b px-4 py-3">
-                <Button variant="ghost" size="icon" className="-ml-1 lg:hidden" onClick={() => setSelected(null)}>
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <MessageCircle className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{sectorLabel(selected.sector)}</p>
-                  <div className="mt-0.5 flex items-center gap-2">
-                    <Badge variant="secondary" className="text-[10px]">{sectorLabel(selected.sector)}</Badge>
-                    <Badge variant="outline" className="text-[10px]">{statusLabel(selected.status)}</Badge>
-                    <span className="truncate text-xs text-muted-foreground">
-                      Cliente {selected.customer_id?.slice(0, 8)}
-                    </span>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {selected ? (
+            <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Button size="icon" variant="ghost" className="lg:hidden" onClick={() => setSelected(null)} aria-label="Voltar">
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{customerName(selected.customer_id)}</p>
+                    <p className="text-xs text-muted-foreground">{sectorLabel(selected.sector)} · {statusLabel(selected.status)}</p>
                   </div>
                 </div>
                 <Button
-                  variant="outline"
                   size="sm"
+                  variant="outline"
                   onClick={() => { setTransferTarget(selected); setTransferSector(''); setTransferError(null); }}
                 >
                   Transferir setor
                 </Button>
               </div>
 
-              <ScrollArea className="flex-1 px-4 py-4">
-                <div className="space-y-4" ref={scrollRef}>
-                  {messages.length === 0 && (
-                    <p className="py-10 text-center text-sm text-muted-foreground">
-                      Nenhuma mensagem ainda.
-                    </p>
-                  )}
-                  {messages.map((msg) => {
-                    const mine = msg.sender_type !== 'customer';
+              {/* ✅ SCROLL CORRIGIDO: div rolável nativa com o ref nela.
+                  Abre sempre na mensagem MAIS RECENTE (auto-scroll). */}
+              <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+                <div className="space-y-3 px-4 py-4">
+                  {messages.map((m) => {
+                    const own = m.sender_user_id != null && !m.sender_customer_id;
                     return (
-                      <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <div className="max-w-[75%]">
-                          <div
-                            className={`rounded-2xl px-4 py-2.5 shadow-sm ${
-                              mine ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm bg-muted text-foreground'
-                            }`}
-                          >
-                            <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
-                          </div>
-                          <p className={`mt-1 text-[10px] text-muted-foreground ${mine ? 'text-right' : ''}`}>
-                            {formatDateTime(msg.created_at)}
-                          </p>
+                      <div key={m.id} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] rounded-lg border px-3 py-2 ${own ? 'bg-primary/10' : 'bg-muted/30'}`}>
+                          <p className="mb-0.5 text-xs font-medium text-muted-foreground">{senderName(m)}</p>
+                          <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                          <p className="mt-1 text-right text-[10px] text-muted-foreground">{formatDateTime(m.created_at)}</p>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              </ScrollArea>
+              </div>
 
               {!isClosed ? (
                 <div className="flex gap-2 border-t p-3">
@@ -298,12 +312,10 @@ export default function CompanyChatPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="border-t p-4 text-center text-sm text-muted-foreground">Conversa encerrada</div>
+                <p className="border-t p-3 text-center text-sm text-muted-foreground">Conversa encerrada.</p>
               )}
             </Card>
-          </div>
-        ) : (
-          <div className="hidden min-w-0 flex-1 lg:flex">
+          ) : (
             <Card className="flex w-full items-center justify-center">
               <CardContent className="p-12 text-center">
                 <MessageCircle className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
@@ -313,39 +325,38 @@ export default function CompanyChatPage() {
                 </p>
               </CardContent>
             </Card>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Modal de transferência de setor (apenas atendente — backend revalida) */}
+      {/* Modal de transferência */}
       <Dialog open={!!transferTarget} onOpenChange={(o) => { if (!o) setTransferTarget(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Transferir conversa de setor</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
+          {transferTarget && (
+            <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Mover a conversa para outro setor de atendimento.
+                Cliente: <strong>{customerName(transferTarget.customer_id)}</strong>
               </p>
-              <Select value={transferSector || 'none'} onValueChange={(v) => setTransferSector(v === 'none' ? '' : v)}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Setor de destino" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Selecione…</SelectItem>
-                  {Object.entries(SECTOR_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Label htmlFor="transfer-sector">Novo setor</Label>
+                <Select value={transferSector} onValueChange={(v) => { setTransferSector(v); setTransferError(null); }}>
+                  <SelectTrigger id="transfer-sector" className="w-full"><SelectValue placeholder="Selecione…" /></SelectTrigger>
+                  <SelectContent>
+                    {Object.keys(SECTOR_LABELS).map((s) => (
+                      <SelectItem key={s} value={s}>{SECTOR_LABELS[s]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {transferError && <p role="alert" className="text-sm text-destructive">{transferError}</p>}
+              <DialogFooter>
+                <Button onClick={confirmTransfer} disabled={!transferSector || transferring}>
+                  {transferring ? 'Transferindo…' : 'Transferir'}
+                </Button>
+              </DialogFooter>
             </div>
-            {transferError && <p role="alert" className="text-sm text-destructive">{transferError}</p>}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setTransferTarget(null)} disabled={transferring}>
-                Cancelar
-              </Button>
-              <Button onClick={confirmTransfer} disabled={transferring || !transferSector}>
-                {transferring ? 'Transferindo…' : 'Transferir'}
-              </Button>
-            </DialogFooter>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

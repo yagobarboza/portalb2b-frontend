@@ -55,39 +55,26 @@ export default function TeamPage() {
   const { user: me, hasPermission } = useAuth();
   const can = (p: string) => hasPermission(p);
 
-  // ── Usuários do tenant
   const [users, setUsers] = useState<UserRead[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
-
-  // ── Roles (globais + do tenant)
   const [roles, setRoles] = useState<Role[]>([]);
-
-  // ── Convites pendentes
   const [invites, setInvites] = useState<InviteResponse[]>([]);
-
-  // ── Dialogs
   const [inviteOpen, setInviteOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
   const [editUser, setEditUser] = useState<UserRead | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<UserRead | null>(null);
   const [cancelInvite, setCancelInvite] = useState<InviteResponse | null>(null);
   const [saving, setSaving] = useState(false);
-
-  // ── Formulário de convite
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
   const [inviteRoleSlug, setInviteRoleSlug] = useState('');
   const [inviteError, setInviteError] = useState<string | null>(null);
-
-  // ── Formulário de edição de usuário
   const [editRoles, setEditRoles] = useState<string[]>([]);
   const [editStatus, setEditStatus] = useState('active');
   const [editError, setEditError] = useState<string | null>(null);
-
-  // ── Formulário de nova role
   const [roleName, setRoleName] = useState('');
   const [roleSlug, setRoleSlug] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
@@ -107,9 +94,13 @@ export default function TeamPage() {
     setLoading(true);
     try {
       const data = await api.get<UserPage>('/users', { page, page_size: PAGE_SIZE });
-      setUsers(data.items);
-      setTotal(data.total);
-      setPages(data.pages || 1);
+      // ✅ BUG 3: GET /users retorna TODOS os usuários do tenant, inclusive
+      // clientes (role 'cliente'). Equipe = apenas quem NÃO é cliente.
+      // Os clientes continuam visíveis apenas na página "Clientes".
+      const team = data.items.filter((u) => !u.roles?.includes('cliente'));
+      setUsers(team);
+      setTotal(team.length);
+      setPages(1);
     } catch {
       toast.error('Não foi possível carregar a equipe.');
     } finally {
@@ -122,7 +113,6 @@ export default function TeamPage() {
       const data = await api.get<InviteResponse[]>('/invitations');
       setInvites(data);
     } catch {
-      // Convites são complementares; falha aqui não derruba a página.
       setInvites([]);
     }
   }, []);
@@ -131,15 +121,13 @@ export default function TeamPage() {
   useEffect(() => { loadRoles(); }, [loadRoles]);
   useEffect(() => { loadInvites(); }, [loadInvites]);
 
-  // ── Perfis disponíveis para convite/edição.
-  // Mostra TODOS os perfis do tenant (admin, vendedor, financeiro, suporte
-  // + perfis customizados). Exclui apenas 'cliente' (perfil de comprador,
-  // não de equipe) e 'super_admin' (global, não atribuível a um membro).
+  // ✅ BUG 3: perfis válidos p/ convidar membro da equipe — TODOS os perfis
+  // do tenant (admin, vendedor, financeiro, suporte + customizados),
+  // excluindo 'cliente' (comprador) e 'super_admin' (global).
   const selectableRoles = roles.filter(
     (r) => r.slug !== 'cliente' && r.slug !== 'super_admin'
   );
 
-  // ── Convidar (criação de usuário é SEMPRE por convite — contrato)
   const submitInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
@@ -172,7 +160,6 @@ export default function TeamPage() {
     }
   };
 
-  // ── Editar usuário (nome, status, roles)
   const openEdit = (u: UserRead) => {
     setEditUser(u);
     setEditRoles(u.roles);
@@ -211,7 +198,6 @@ export default function TeamPage() {
     }
   };
 
-  // ── Desativar usuário (espelha a proteção de auto-desativação do backend)
   const isSelf = (u: UserRead) => me?.id === u.id;
 
   const confirmDeactivate = async () => {
@@ -229,7 +215,6 @@ export default function TeamPage() {
     }
   };
 
-  // ── Cancelar convite pendente
   const confirmCancelInvite = async () => {
     if (!cancelInvite || saving) return;
     setSaving(true);
@@ -245,7 +230,6 @@ export default function TeamPage() {
     }
   };
 
-  // ── Criar role customizada (permissões agrupadas por domínio)
   const toggleRolePerm = (code: PermissionCode) => {
     setRolePerms((prev) =>
       prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
@@ -296,7 +280,7 @@ export default function TeamPage() {
                 <DialogTrigger asChild>
                   <Button variant="outline"><Shield className="mr-2 h-4 w-4" />Perfis de acesso</Button>
                 </DialogTrigger>
-                {/* max-h + overflow: permite rolar para baixo no dialog */}
+                {/* ✅ Scroll: permite rolar para baixo no dialog */}
                 <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>Perfis de acesso (Roles)</DialogTitle></DialogHeader>
                   <div className="max-h-72 space-y-2 overflow-auto">
@@ -397,7 +381,6 @@ export default function TeamPage() {
         }
       />
 
-      {/* Convites pendentes */}
       {pendingInvites > 0 && can(PERMISSIONS.USER_READ) && (
         <Card className="mb-5">
           <CardHeader className="pb-3">
@@ -438,7 +421,6 @@ export default function TeamPage() {
         </Card>
       )}
 
-      {/* Usuários */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
@@ -513,7 +495,6 @@ export default function TeamPage() {
         </CardContent>
       </Card>
 
-      {/* Edição de usuário */}
       <Dialog open={!!editUser} onOpenChange={(o) => { if (!o) setEditUser(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Editar colaborador</DialogTitle></DialogHeader>
@@ -541,7 +522,7 @@ export default function TeamPage() {
               <div className="space-y-2">
                 <Label>Perfis de acesso</Label>
                 <div className="max-h-48 space-y-1 overflow-auto rounded-md border p-3">
-                  {roles.map((r) => (
+                  {roles.filter((r) => r.slug !== 'super_admin').map((r) => (
                     <label key={r.id} className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -564,7 +545,6 @@ export default function TeamPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Confirmação: desativar usuário */}
       <AlertDialog open={!!deactivateTarget} onOpenChange={(o) => { if (!o) setDeactivateTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -582,7 +562,6 @@ export default function TeamPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Confirmação: cancelar convite */}
       <AlertDialog open={!!cancelInvite} onOpenChange={(o) => { if (!o) setCancelInvite(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
