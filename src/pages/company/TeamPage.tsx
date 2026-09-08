@@ -5,7 +5,7 @@ import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { PERMISSIONS, PERMISSION_GROUPS } from '../../lib/constants';
 import type { PermissionCode } from '../../lib/constants';
-import type { InviteResponse, Role, RoleList, UserPage, UserRead } from '@/types/api';
+import type { ChatSector, InviteResponse, Role, RoleList, UserPage, UserRead } from '@/types/api';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -32,6 +32,16 @@ const ROLE_LABELS: Record<string, string> = {
   financial: 'Financeiro',
   admin: 'Administração',
 };
+
+// ✅ Rótulos e opções dos setores de atendimento (chat)
+const CHAT_SECTOR_LABELS: Record<ChatSector, string> = {
+  sales: 'Vendas',
+  commercial: 'Comercial',
+  financial: 'Financeiro',
+  support: 'Suporte',
+  service: 'Serviços',
+};
+const CHAT_SECTORS: ChatSector[] = ['sales', 'commercial', 'financial', 'support', 'service'];
 
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
   return (
@@ -74,6 +84,7 @@ export default function TeamPage() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [editRoles, setEditRoles] = useState<string[]>([]);
   const [editStatus, setEditStatus] = useState('active');
+  const [editSector, setEditSector] = useState<ChatSector | null>(null); // ✅ NOVO
   const [editError, setEditError] = useState<string | null>(null);
   const [roleName, setRoleName] = useState('');
   const [roleSlug, setRoleSlug] = useState('');
@@ -160,6 +171,7 @@ export default function TeamPage() {
     setEditUser(u);
     setEditRoles(u.roles);
     setEditStatus(u.status);
+    setEditSector(u.chat_sector ?? null); // ✅ NOVO
     setEditError(null);
   };
 
@@ -183,6 +195,7 @@ export default function TeamPage() {
       await api.patch<UserRead>(`/users/${editUser.id}`, {
         role_slugs: editRoles,
         status: editStatus,
+        chat_sector: editSector, // ✅ NOVO
       });
       toast.success('Colaborador atualizado.');
       setEditUser(null);
@@ -435,6 +448,7 @@ export default function TeamPage() {
                     <TableHead>Colaborador</TableHead>
                     <TableHead>E-mail</TableHead>
                     <TableHead>Perfis</TableHead>
+                    <TableHead>Setor (chat)</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
@@ -455,6 +469,13 @@ export default function TeamPage() {
                               <Badge key={slug} variant="secondary">{slug}</Badge>
                             ))}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {u.chat_sector ? (
+                            <Badge variant="outline">{CHAT_SECTOR_LABELS[u.chat_sector] ?? u.chat_sector}</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Todos</span>
+                          )}
                         </TableCell>
                         <TableCell>{statusBadge(u.status)}</TableCell>
                         <TableCell className="text-right">
@@ -490,6 +511,7 @@ export default function TeamPage() {
         </CardContent>
       </Card>
 
+      {/* Edição de usuário */}
       <Dialog open={!!editUser} onOpenChange={(o) => { if (!o) setEditUser(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Editar colaborador</DialogTitle></DialogHeader>
@@ -513,6 +535,25 @@ export default function TeamPage() {
                     <SelectItem value="blocked">Bloqueado</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              {/* ✅ NOVO: setor de atendimento do chat */}
+              <div className="space-y-2">
+                <Label>Setor de atendimento (chat)</Label>
+                <Select
+                  value={editSector ?? 'all'}
+                  onValueChange={(value) => { setEditSector(value === 'all' ? null : (value as ChatSector)); setEditError(null); }}
+                >
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os setores</SelectItem>
+                    {CHAT_SECTORS.map((s) => (
+                      <SelectItem key={s} value={s}>{CHAT_SECTOR_LABELS[s]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Selecione um setor para que o atendente veja apenas as conversas dele. "Todos os setores" = vê tudo (admin/geral).
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Perfis de acesso</Label>

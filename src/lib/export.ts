@@ -1,11 +1,18 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
-import type { Order, OrderItem } from '../types/api';
-import { mockProducts, customerName } from '../data/mock';
-import { formatCurrency, formatDate, formatDateTime } from './format';
+/**
+ * Utilitários de exportação (Blocos 4/7).
+ * Gera relatórios de pedidos em Excel (SheetJS/XLSX) e PDF (jsPDF).
+ *
+ * ✅ Purga do mock (Bloco 12):
+ * - Nenhum dado fictício — as funções recebem os dados REAIS da API.
+ * - Resolução de SKU/nome de produto via mapa fornecido pelo chamador
+ *   (nunca importa de src/data/mock).
+ */
+import XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import { formatCurrency, formatDate } from './format';
+import type { Order } from '@/types/api';
 
-// Todos os status do pedido (OrderStatus) com rótulo PT-BR.
+/** Rótulos PT-BR dos status de pedido (espelho do backend). */
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Rascunho',
   submitted: 'Enviado',
@@ -15,204 +22,144 @@ const STATUS_LABELS: Record<string, string> = {
   approved: 'Aprovado',
   processing: 'Em Processamento',
   invoiced: 'Faturado',
-  shipped: 'Enviado/Entregue',
+  shipped: 'Enviado / Trânsito',
   completed: 'Concluído',
   cancelled: 'Cancelado',
 };
 
-function orderNumber(id: string): string {
-  return `#${id.replace('order-', '').toUpperCase()}`;
+/** Converte id/número do pedido para exibição (remove prefixo legado "order-"). */
+export function orderNumber(idOrNumber: string): string {
+  return idOrNumber.replace(/^order-/, '');
 }
 
-// Resolve SKU do produto pelo id (fallback: o próprio id).
-function productSku(productId: string): string {
-  return mockProducts.find((p) => p.id === productId)?.sku || productId;
+/**
+ * Resolve o SKU de um produto a partir de um mapa (id → produto).
+ * Sem mapa, retorna o próprio id (fallback seguro — nunca quebra o relatório).
+ */
+export function productSku(
+  productId: string,
+  products: Array<{ id: string; sku: string }> = []
+): string {
+  return products.find((p) => p.id === productId)?.sku ?? productId;
 }
 
-// Resolve nome do produto pelo id (fallback: o próprio id).
-function productName(productId: string): string {
-  return mockProducts.find((p) => p.id === productId)?.name || productId;
+/**
+ * Resolve o NOME de um produto a partir de um mapa (id → produto).
+ * Sem mapa, retorna o próprio id (fallback seguro).
+ */
+export function productName(
+  productId: string,
+  products: Array<{ id: string; name: string }> = []
+): string {
+  return products.find((p) => p.id === productId)?.name ?? productId;
 }
 
-export function exportOrderPDF(order: Order, companyName: string) {
-  const doc = new jsPDF();
-  const pageWidth = doc.internal.pageSize.getWidth();
-
-  // Header
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.text(companyName, 14, 20);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100);
-  doc.text('Relatório de Pedido', 14, 27);
-  doc.setDrawColor(220);
-  doc.line(14, 31, pageWidth - 14, 31);
-
-  // Order info
-  doc.setTextColor(0);
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.text(orderNumber(order.id), 14, 40);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(`Data de emissão: ${formatDate(order.created_at)}`, 14, 46);
-  doc.text(`Cliente: ${customerName(order.customer_id)}`, 14, 52);
-  doc.text(`Status: ${STATUS_LABELS[order.status] || order.status}`, 14, 58);
-  if (order.notes) {
-    doc.text(`Observação: ${order.notes}`, 14, 64);
-  }
-
-  // Items table
-  autoTable(doc, {
-    startY: order.notes ? 70 : 64,
-    head: [['SKU', 'Produto', 'Qtd', 'Preço Unit.', 'Subtotal']],
-    body: order.items.map((item: OrderItem) => [
-      productSku(item.product_id),
-      productName(item.product_id),
-      String(item.quantity),
-      formatCurrency(item.unit_price),
-      formatCurrency(item.subtotal),
-    ]),
-    headStyles: { fillColor: [30, 64, 175], fontSize: 9 },
-    bodyStyles: { fontSize: 9 },
-    columnStyles: {
-      2: { halign: 'center' },
-      3: { halign: 'right' },
-      4: { halign: 'right' },
-    },
-    margin: { left: 14, right: 14 },
-  });
-
-  // Total
-  const afterTable = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`Total: ${formatCurrency(order.total)}`, pageWidth - 14, afterTable + 10, { align: 'right' });
-
-  // Footer
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(150);
-  doc.text(`Gerado em ${formatDateTime(new Date().toISOString())}`, 14, doc.internal.pageSize.getHeight() - 10);
-  doc.save(`pedido-${order.id.replace('order-', '')}.pdf`);
-}
-
-export function exportOrderXLSX(order: Order) {
-  const rows = order.items.map((item: OrderItem) => ({
-    'Número do Pedido': orderNumber(order.id),
-    'Data': formatDate(order.created_at),
-    'Cliente': customerName(order.customer_id),
-    'Produto': productName(item.product_id),
-    'SKU': productSku(item.product_id),
+/** Exporta UM pedido em Excel (.xlsx). */
+export function exportOrderXLSX(
+  order: Order,
+  products: Array<{ id: string; name: string; sku: string }> = []
+): void {
+  const rows = order.items.map((item) => ({
+    'Produto': productName(item.product_id, products),
+    'SKU': productSku(item.product_id, products),
     'Quantidade': item.quantity,
-    'Preço Unitário': item.unit_price,
+    'Unitário': item.unit_price,
     'Subtotal': item.subtotal,
-    'Status': STATUS_LABELS[order.status] || order.status,
-    'Total Geral': order.total,
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
-    { wch: 16 }, { wch: 12 }, { wch: 28 }, { wch: 36 }, { wch: 12 },
-    { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 14 },
+    { wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pedido');
-  XLSX.writeFile(wb, `pedido-${order.id.replace('order-', '')}.xlsx`);
+  XLSX.writeFile(wb, `pedido-${order.number}.xlsx`);
 }
 
+export interface OrderReportFilters {
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  status?: string;
+  customer?: string;
+  search?: string;
+}
+
+/** Exporta o relatório de pedidos em Excel (.xlsx). */
+export function exportOrdersReportXLSX(orders: Order[]): void {
+  const rows = orders.map((o) => ({
+    'Número do Pedido': orderNumber(o.number),
+    'Cliente': o.customer_id,
+    'Data': formatDate(o.created_at),
+    'Itens': o.items.reduce((q, i) => q + i.quantity, 0),
+    'Valor': o.total,
+    'Status': STATUS_LABELS[o.status] || o.status,
+    'Atualizado em': formatDate(o.created_at),
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 16 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 20 }, { wch: 14 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
+  XLSX.writeFile(wb, 'relatorio-pedidos.xlsx');
+}
+
+/** Exporta o relatório de pedidos em PDF (jsPDF). */
 export function exportOrdersReportPDF(
   orders: Order[],
-  companyName: string,
-  filters: { dateFrom?: string; dateTo?: string; status?: string; customer?: string; search?: string }
-) {
+  filters: OrderReportFilters = {}
+): void {
   const doc = new jsPDF();
-  const pageWidth = doc.internal.pageSize.getWidth();
 
-  // Header
-  doc.setFontSize(18);
-  doc.setFont('helvetica', 'bold');
-  doc.text(companyName, 14, 20);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100);
-  doc.text('Relatório de Pedidos', 14, 27);
-  doc.setDrawColor(220);
-  doc.line(14, 31, pageWidth - 14, 31);
-
-  // Filters summary
-  doc.setTextColor(0);
+  // Cabeçalho
+  doc.setFontSize(16);
+  doc.text('Relatório de Pedidos', 14, 20);
   doc.setFontSize(8);
+
+  // Resumo dos filtros
   let y = 38;
   const period = filters.dateFrom || filters.dateTo
     ? `${filters.dateFrom ? formatDate(filters.dateFrom) : 'Início'} até ${filters.dateTo ? formatDate(filters.dateTo) : 'Hoje'}`
     : 'Todos os períodos';
   doc.text(`Período: ${period}`, 14, y); y += 5;
-  doc.text(`Status: ${filters.status && filters.status !== 'all' ? STATUS_LABELS[filters.status] || filters.status : 'Todos'}`, 14, y); y += 5;
+  doc.text(
+    `Status: ${filters.status && filters.status !== 'all' ? (STATUS_LABELS[filters.status] || filters.status) : 'Todos'}`,
+    14, y,
+  ); y += 5;
   doc.text(`Cliente: ${filters.customer && filters.customer !== 'all' ? filters.customer : 'Todos'}`, 14, y); y += 5;
   if (filters.search) {
     doc.text(`Busca: ${filters.search}`, 14, y); y += 5;
   }
+  y += 4;
 
-  // Indicators
-  const total = orders.length;
-  const pending = orders.filter((o) => o.status === 'submitted').length;
-  const approved = orders.filter((o) => o.status === 'approved').length;
-  const denied = orders.filter((o) => o.status === 'cancelled').length;
-  const totalValue = orders.reduce((s, o) => s + o.total, 0);
-  const totalItems = orders.reduce((s, o) => s + o.items.reduce((q, i) => q + i.quantity, 0), 0);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  y += 2;
-  doc.text('Indicadores', 14, y); y += 6;
-  doc.setFont('helvetica', 'normal');
+  // Tabela
   doc.setFontSize(8);
-  doc.text(`Total de pedidos: ${total}`, 14, y); y += 5;
-  doc.text(`Aguardando aprovação: ${pending}`, 14, y); y += 5;
-  doc.text(`Aprovados: ${approved}`, 14, y); y += 5;
+  doc.text('Nº', 14, y); doc.text('Cliente', 34, y); doc.text('Data', 70, y);
+  doc.text('Valor', 110, y); doc.text('Status', 140, y);
+  y += 5;
+  const approved = orders.filter((o) => o.status === 'completed').length;
+  const denied = orders.filter((o) => o.status === 'cancelled').length;
+  const totalValue = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const totalItems = orders.reduce((q, o) => q + o.items.reduce((qi, i) => qi + i.quantity, 0), 0);
+  for (const o of orders) {
+    if (y > 280) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.text(orderNumber(o.number), 14, y);
+    doc.text(o.customer_id, 34, y);
+    doc.text(formatDate(o.created_at), 70, y);
+    doc.text(formatCurrency(o.total), 110, y);
+    doc.text(STATUS_LABELS[o.status] || o.status, 140, y);
+    y += 5;
+  }
+
+  // Rodapé resumo
+  y += 6;
+  doc.text(`Total de pedidos: ${orders.length}`, 14, y); y += 5;
+  doc.text(`Concluídos: ${approved}`, 14, y); y += 5;
   doc.text(`Negados: ${denied}`, 14, y); y += 5;
   doc.text(`Valor total: ${formatCurrency(totalValue)}`, 14, y); y += 5;
-  doc.text(`Quantidade total de itens: ${totalItems}`, 14, y); y += 5;
+  doc.text(`Quantidade total de itens: ${totalItems}`, 14, y);
 
-  // Orders table
-  autoTable(doc, {
-    startY: y + 2,
-    head: [['Pedido', 'Cliente', 'Data', 'Itens', 'Valor', 'Status']],
-    body: orders.map((o) => [
-      orderNumber(o.id),
-      customerName(o.customer_id),
-      formatDate(o.created_at),
-      String(o.items.reduce((q, i) => q + i.quantity, 0)),
-      formatCurrency(o.total),
-      STATUS_LABELS[o.status] || o.status,
-    ]),
-    headStyles: { fillColor: [30, 64, 175], fontSize: 8 },
-    bodyStyles: { fontSize: 8 },
-    margin: { left: 14, right: 14 },
-  });
-
-  // Footer
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(150);
-  doc.text(`Gerado em ${formatDateTime(new Date().toISOString())}`, 14, doc.internal.pageSize.getHeight() - 10);
   doc.save('relatorio-pedidos.pdf');
-}
-
-export function exportOrdersReportXLSX(orders: Order[]) {
-  const rows = orders.map((o) => ({
-    'Número do Pedido': orderNumber(o.id),
-    'Cliente': customerName(o.customer_id),
-    'Data': formatDate(o.created_at),
-    'Itens': o.items.reduce((q, i) => q + i.quantity, 0),
-    'Valor': o.total,
-    'Status': STATUS_LABELS[o.status] || o.status,
-  }));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [
-    { wch: 16 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 20 },
-  ];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
-  XLSX.writeFile(wb, 'relatorio-pedidos.xlsx');
 }
