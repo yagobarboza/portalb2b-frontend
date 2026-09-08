@@ -5,8 +5,8 @@ import {
 } from 'lucide-react';
 import {
   createTicket, getTicket, listTickets, sendTicketMessage, uploadTicketAttachment,
-  getAttachmentUrl,
 } from '../../lib/ticketsApi';
+import { ChatAttachment } from '../../components/chat/ChatAttachment'; // ✅ substitui getAttachmentUrl
 import { ticketPriorityLabel, ticketStatusLabel } from '../../lib/ticketStatus';
 import { formatDateTime, formatDate } from '../../lib/format';
 import type {
@@ -31,20 +31,6 @@ const CATEGORIES = ['Suporte técnico', 'Comercial', 'Financeiro', 'Cadastro', '
 /** Ticket fechado/resolvido → cliente não pode mais enviar mensagens/anexos. */
 const isClosedForClient = (status: TicketStatus) =>
   status === 'resolved' || status === 'closed';
-
-function AttachPreview({ label, href }: { label: string; href: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-    >
-      <Paperclip className="h-3 w-3" />
-      {label}
-    </a>
-  );
-}
 
 export default function ClientTicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -207,9 +193,8 @@ export default function ClientTicketsPage() {
                       {mine ? 'Você' : 'Suporte'} · {formatDateTime(m.created_at)}
                     </p>
                     <p className="text-sm whitespace-pre-wrap">{m.content}</p>
-                    {m.attachment_file_id && (
-                      <AttachPreview label="Baixar anexo" href={getAttachmentUrl(m.attachment_file_id)} />
-                    )}
+                    {/* ✅ Anexo: imagem/vídeo inline; demais → download direto */}
+                    {m.attachment_file_id && <ChatAttachment fileId={m.attachment_file_id} />}
                   </div>
                 </div>
               );

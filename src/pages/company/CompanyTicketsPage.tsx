@@ -4,9 +4,10 @@ import { Paperclip, Search, Send, TicketIcon, UserCog } from 'lucide-react'; // 
 import { useAuth } from '../../context/AuthContext';
 import { api, ApiError } from '../../lib/api';
 import {
-  assignTicket, getAttachmentUrl, getTicket, listTickets,
+  assignTicket, getTicket, listTickets,
   sendTicketMessage, updateTicketStatus, uploadTicketAttachment,
 } from '../../lib/ticketsApi';
+import { ChatAttachment } from '../../components/chat/ChatAttachment'; // ✅ substitui getAttachmentUrl
 import {
   ticketPriorityClass, ticketPriorityLabel, ticketStatusClass, ticketStatusLabel,
 } from '../../lib/ticketStatus';
@@ -300,6 +301,7 @@ export default function CompanyTicketsPage() {
                   #{detail.number} · {customerName(detail.customer_id)} — {detail.title}
                 </DialogTitle>
               </DialogHeader>
+
               <div className="flex flex-wrap gap-2 text-xs">
                 <Badge className={ticketStatusClass(detail.status)}>{ticketStatusLabel(detail.status)}</Badge>
                 <Badge className={ticketPriorityClass(detail.priority)}>{ticketPriorityLabel(detail.priority)}</Badge>
@@ -308,9 +310,11 @@ export default function CompanyTicketsPage() {
                   <Badge variant="outline">Resp.: {assigneeNameMap[detail.assignee_id] ?? detail.assignee_id.slice(0, 8)}</Badge>
                 )}
               </div>
+
               <p className="text-xs text-muted-foreground">
                 Aberto por <strong>{customerName(detail.customer_id)}</strong> · {formatDateTime(detail.created_at)}
               </p>
+
               {detail.description && (
                 <p className="rounded-md border bg-muted/20 p-3 text-sm whitespace-pre-wrap">{detail.description}</p>
               )}
@@ -328,16 +332,8 @@ export default function CompanyTicketsPage() {
                         <span>{formatDateTime(msg.created_at)}</span>
                       </div>
                       <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      {msg.attachment_file_id && (
-                        <a
-                          href={getAttachmentUrl(msg.attachment_file_id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-                        >
-                          <Paperclip className="h-3 w-3" /> Baixar anexo
-                        </a>
-                      )}
+                      {/* ✅ Anexo: imagem/vídeo inline; demais → download direto */}
+                      {msg.attachment_file_id && <ChatAttachment fileId={msg.attachment_file_id} />}
                     </div>
                   );
                 })}

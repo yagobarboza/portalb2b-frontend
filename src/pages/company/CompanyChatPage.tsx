@@ -6,11 +6,11 @@ import { toChatMessage, useChatWebSocket } from '../../lib/websocket';
 import type {
   ChatMessage, ChatMessagePage, ChatRoom, CustomerPage, UserPage,
 } from '@/types/api';
-import { getAttachmentUrl } from '../../lib/ticketsApi';
-import { formatDateTime } from '../../lib/format'; // ✅ formatDate removido (não usado)
+import { ChatAttachment } from '../../components/chat/ChatAttachment'; // ✅ substitui getAttachmentUrl
+import { formatDateTime } from '../../lib/format';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card'; // ✅ CardContent adicionado
+import { Card, CardContent } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import {
@@ -310,16 +310,8 @@ export default function CompanyChatPage() {
                         <div className={`max-w-[75%] rounded-lg border px-3 py-2 ${own ? 'bg-primary/10' : 'bg-muted/30'}`}>
                           <p className="mb-0.5 text-xs font-medium text-muted-foreground">{senderName(m)}</p>
                           <p className="text-sm whitespace-pre-wrap">{m.content}</p>
-                          {m.attachment_file_id && (
-                            <a
-                              href={getAttachmentUrl(m.attachment_file_id)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-                            >
-                              <Paperclip className="h-3 w-3" /> Baixar anexo
-                            </a>
-                          )}
+                          {/* ✅ Anexo: imagem/vídeo inline; demais → download direto */}
+                          {m.attachment_file_id && <ChatAttachment fileId={m.attachment_file_id} />}
                           <p className="mt-1 text-right text-[10px] text-muted-foreground">{formatDateTime(m.created_at)}</p>
                         </div>
                       </div>

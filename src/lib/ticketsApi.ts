@@ -5,10 +5,17 @@
  * - Mensagens internas só são buscadas para perfis de empresa (include_internal).
  * - Erros sanitizados via ApiError; nada de detalhes internos na UI.
  * - Envio de anexos via multipart/form-data (POST /tickets/{id}/attachments).
+ *
+ * ✅ ANEXOS (correção de exibição):
+ * - resolveAttachmentUrl(fileId) resolve a URL REAL do arquivo chamando
+ *   GET /files/{id}/download → { url, expires_in }. O backend autoriza por
+ *   tenant/propriedade antes de devolver a URL pública.
+ * - NUNCA usar o endpoint de download como href direto (ele retorna JSON,
+ *   não o arquivo — por isso o navegador mostrava o texto em vez da imagem).
  */
 import { api } from './api';
 import type {
-  Ticket, TicketDetail, TicketMessage, TicketPage,
+  FileDownloadResponse, Ticket, TicketDetail, TicketMessage, TicketPage,
   TicketPriority, TicketStatus,
 } from '@/types/api';
 
@@ -51,10 +58,15 @@ export function uploadTicketAttachment(ticketId: string, file: File) {
   return api.upload<TicketMessage>(`/tickets/${ticketId}/attachments`, formData);
 }
 
-/** URL de download do anexo (GET /files/{id}/download → {url, expires_in}). */
-export function getAttachmentUrl(fileId: string): string {
-  // URL relativa via proxy Vite; em produção usa a base configurada pelo api.ts.
-  return `/api/v1/files/${fileId}/download`;
+/**
+ * ✅ Resolve a URL REAL de um anexo (imagem/vídeo/arquivo).
+ * O backend autoriza por tenant/propriedade e devolve a URL pública direta.
+ * Retorna a URL do arquivo (não o endpoint de download).
+ */
+export function resolveAttachmentUrl(fileId: string): Promise<string> {
+  return api
+    .get<FileDownloadResponse>(`/files/${fileId}/download`)
+    .then((r) => r.url);
 }
 
 /** Atualiza status (apenas empresa). */
