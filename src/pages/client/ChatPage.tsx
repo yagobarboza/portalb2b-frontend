@@ -3,13 +3,20 @@ import { toast } from 'sonner';
 import { ArrowLeft, MessageCircle, MessageSquare, Paperclip, Plus, Send } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { toChatMessage, useChatWebSocket } from '../../lib/websocket';
-import type { ChatMessage, ChatMessagePage, ChatRoom } from '@/types/api';
+import type { ChatMessage, ChatMessagePage, ChatRoom, ChatSector } from '@/types/api';
 import { getAttachmentUrl } from '../../lib/ticketsApi';
 import { formatDate, formatDateTime } from '../../lib/format';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '../../components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../../components/ui/select';
 
 const PAGE_SIZE = 50;
 
@@ -20,6 +27,8 @@ const SECTOR_LABELS: Record<string, string> = {
   support: 'Suporte',
   service: 'Serviços',
 };
+
+const SECTOR_OPTIONS: ChatSector[] = ['sales', 'commercial', 'financial', 'support', 'service'];
 
 const ROOM_STATUS_LABEL: Record<string, string> = {
   open: 'Aberta',
@@ -34,6 +43,9 @@ export default function ClientChatPage() {
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [opening, setOpening] = useState(false);
   const [sending, setSending] = useState(false);
+  // Seleção de setor para NOVO atendimento
+  const [sectorOpen, setSectorOpen] = useState(false);
+  const [selectedSector, setSelectedSector] = useState<ChatSector>('sales');
   const scrollRef = useRef<HTMLDivElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
 
@@ -64,17 +76,10 @@ export default function ClientChatPage() {
 
   useEffect(() => { loadRooms(); }, [loadRooms]);
 
-  const openRoom = async () => {
-    setOpening(true);
-    try {
-      const room = await api.post<ChatRoom>('/chat/rooms', {});
-      setSelected(room);
-      await loadHistory(room.id);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Erro ao iniciar o atendimento.');
-    } finally {
-      setOpening(false);
-    }
+  const openRoom = async (room: ChatRoom) => {
+    setSelected(room);
+    await loadHistory(room.id);
+    api.post(`/chat/rooms/${room.id}/read`).catch(() => {});
   };
 
   const loadHistory = async (roomId: string) => {
@@ -89,10 +94,26 @@ export default function ClientChatPage() {
     }
   };
 
-  const openExisting = async (room: ChatRoom) => {
-    setSelected(room);
-    await loadHistory(room.id);
-    api.post(`/chat/rooms/${room.id}/read`).catch(() => {});
+  // ✅ Abre o modal de seleção de setor
+  const handleStartClick = () => {
+    setSelectedSector('sales');
+    setSectorOpen(true);
+  };
+
+  // ✅ Cria/obtém sala no setor escolhido (backend cria NOVA se a anterior fechar)
+  const confirmStart = async () => {
+    setSectorOpen(false);
+    setOpening(true);
+    try {
+      const room = await api.post<ChatRoom>('/chat/rooms', { sector: selectedSector });
+      setSelected(room);
+      await loadHistory(room.id);
+      toast.success(`Atendimento iniciado no setor ${SECTOR_LABELS[selectedSector] ?? selectedSector}.`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao iniciar o atendimento.');
+    } finally {
+      setOpening(false);
+    }
   };
 
   useEffect(() => {
@@ -153,7 +174,7 @@ export default function ClientChatPage() {
           <Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Voltar">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="flex items-center gap-2 text-xl font-bold">
               <MessageCircle className="h-5 w-5 text-primary" />
               {sectorLabel(selected.sector)}
@@ -224,7 +245,7 @@ export default function ClientChatPage() {
             </div>
           ) : (
             <p className="border-t p-3 text-center text-sm text-muted-foreground">
-              📌 Conversa encerrada pelo atendimento.
+              📌 Conversa encerrada pelo atendimento. Clique em "Voltar" e inicie um novo atendimento.
             </p>
           )}
         </Card>
@@ -239,7 +260,8 @@ export default function ClientChatPage() {
           <h1 className="text-3xl font-bold">Chat de Atendimento</h1>
           <p className="mt-1 text-muted-foreground">Converse com os setores da empresa.</p>
         </div>
-        <Button onClick={openRoom} disabled={opening}>
+        {/* ✅ Abre a tela de seleção de setor */}
+        <Button onClick={handleStartClick} disabled={opening}>
           <Plus className="mr-2 h-4 w-4" />
           {opening ? 'Abrindo…' : 'Iniciar atendimento'}
         </Button>
@@ -251,12 +273,14 @@ export default function ClientChatPage() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <MessageSquare className="mb-4 h-16 w-16 text-muted-foreground/30" />
           <h3 className="text-lg font-semibold text-muted-foreground">Nenhuma conversa</h3>
-          <p className="mt-1 text-sm text-muted-foreground/70">Inicie um atendimento com um dos nossos setores.</p>
+          <p className="mt-1 text-sm text-muted-foreground/70">
+            Inicie um atendimento com um dos nossos setores.
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
           {rooms.map((room) => (
-            <Card key={room.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openExisting(room)}>
+            <Card key={room.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openRoom(room)}>
               <div className="flex items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -273,6 +297,35 @@ export default function ClientChatPage() {
           ))}
         </div>
       )}
+
+      {/* ✅ Modal de seleção de setor */}
+      <Dialog open={sectorOpen} onOpenChange={(o) => { if (!o) setSectorOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Iniciar atendimento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Selecione o setor para começar a conversa.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="chat-sector">Setor</Label>
+              <Select value={selectedSector} onValueChange={(v) => setSelectedSector(v as ChatSector)}>
+                <SelectTrigger id="chat-sector" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SECTOR_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s}>{SECTOR_LABELS[s]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSectorOpen(false)}>Cancelar</Button>
+            <Button onClick={confirmStart}>Iniciar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
