@@ -1,92 +1,87 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { ArrowLeft, Minus, Package, Plus, ShoppingCart, Trash2 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
-import { useAuth } from '../../context/AuthContext';
+import { api, ApiError } from '../../lib/api';
+import { isSafeImageUrl } from '../../lib/uploads';
+import { formatCurrency } from '../../lib/format';
+import type { Order } from '@/types/api';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { Separator } from '../../components/ui/separator';
-import { Badge } from '../../components/ui/badge';
-import { ShoppingCart, Minus, Plus, Trash2, Package, ArrowLeft, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { formatCurrency } from '../../lib/format';
-import { toast } from 'sonner';
-import { mockOrders } from '../../data/mock';
-import type { Order, OrderItem } from '../../types';
 
 export default function CartPage() {
-  const { items, updateQty, removeItem, clearCart, total } = useCart();
-  const { currentUser } = useAuth();
+  const { items, productMap, updateQty, removeItem, clearCart, total, isLoading } = useCart();
   const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
   const [ordering, setOrdering] = useState(false);
-  const [ordered, setOrdered] = useState(false);
 
-  const handleFinalize = () => {
-    if (items.length === 0) return;
-    const stockErrors = items.filter((i) => i.qty > i.product.stock);
-    if (stockErrors.length > 0) {
-      toast.error(`Estoque insuficiente para: ${stockErrors.map((e) => e.product.name).join(', ')}`);
-      return;
+  // Itens enriquecidos com o produto (nome/imagem) a partir do mapa do contexto.
+  const rows = useMemo(
+    () =>
+      items
+        .map((item) => ({ item, product: productMap[item.product_id] }))
+        .filter((r): r is { item: (typeof items)[number]; product: NonNullable<(typeof items)[number] extends never ? never : typeof r.product> } => !!r.product),
+    [items, productMap]
+  );
+
+  const handleUpdateQty = async (itemId: string, qty: number) => {
+    if (qty < 1) return;
+    setBusy(true);
+    try {
+      await updateQty(itemId, qty);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao atualizar o carrinho.');
+    } finally {
+      setBusy(false);
     }
-    setOrdering(true);
-
-    setTimeout(() => {
-      const newOrder: Order = {
-        id: `order-${Date.now()}`,
-        customerId: 'cust-1',
-        customerName: currentUser?.name || '',
-        status: 'submitted',
-        items: items.map((i): OrderItem => ({
-          productId: i.product.id,
-          productName: i.product.name,
-          qty: i.qty,
-          unitPrice: i.product.price,
-        })),
-        total,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        tenantId: 'tenant-1',
-      };
-      mockOrders.unshift(newOrder);
-      clearCart();
-      setOrdered(true);
-      setOrdering(false);
-      toast.success('Pedido enviado com sucesso!');
-    }, 1000);
   };
 
-  if (ordered) {
+  const handleRemove = async (itemId: string) => {
+    setBusy(true);
+    try {
+      await removeItem(itemId);
+      toast.success('Item removido do carrinho.');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao remover o item.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Checkout (Bloco 7): POST /orders — o backend cria o pedido a partir do
+  // carrinho persistido e revalida preços/estoque. Nunca enviamos valores.
+  const handleFinalize = async () => {
+    if (items.length === 0 || ordering) return;
+    setOrdering(true);
+    try {
+      await api.post<Order>('/orders', {}); // notes opcional: { notes: '...' }
+      toast.success('Pedido enviado para aprovação!');
+      clearCart();
+      navigate('/pedidos');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao finalizar o pedido.');
+    } finally {
+      setOrdering(false);
+    }
+  };
+
+  if (isLoading) {
     return (
-      <div className="max-w-md mx-auto px-4 py-16 text-center">
-        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-          <CheckCircle2 className="w-10 h-10 text-green-600" />
-        </div>
-        <h2 className="text-2xl font-bold mb-2">Pedido enviado!</h2>
-        <p className="text-muted-foreground mb-8">
-          Seu pedido foi enviado com sucesso e está aguardando aprovação da TechMax.
-        </p>
-        <div className="flex gap-3 justify-center">
-          <Button onClick={() => navigate('/loja')}>
-            Continuar comprando
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/pedidos')}>
-            Ver meus pedidos
-          </Button>
-        </div>
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted-foreground">
+        Carregando carrinho…
       </div>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div className="max-w-md mx-auto px-4 py-16 text-center">
-        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
-          <ShoppingCart className="w-8 h-8 text-muted-foreground" />
-        </div>
-        <h2 className="text-2xl font-bold mb-2">Carrinho vazio</h2>
-        <p className="text-muted-foreground mb-8">
-          Adicione produtos da vitrine para começar.
-        </p>
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center">
+        <ShoppingCart className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
+        <h2 className="text-xl font-bold">Seu carrinho está vazio</h2>
+        <p className="mb-8 mt-1 text-muted-foreground">Adicione produtos da vitrine para começar.</p>
         <Button onClick={() => navigate('/loja')}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
+          <ArrowLeft className="mr-2 h-4 w-4" />
           Ir para a vitrine
         </Button>
       </div>
@@ -94,144 +89,102 @@ export default function CartPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
-      <div className="flex items-center gap-3 mb-8">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/loja')}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold">Carrinho</h1>
-          <p className="text-sm text-muted-foreground">{items.length} ite{items.length !== 1 ? 'ns' : 'm'}</p>
-        </div>
-      </div>
+    <div className="mx-auto max-w-5xl px-4 py-8">
+      <h1 className="mb-6 text-2xl font-bold">Carrinho</h1>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Items list */}
-        <div className="lg:col-span-2 space-y-3">
-          {items.map(({ product, qty }) => (
-            <Card key={product.id} className="overflow-hidden">
-              <CardContent className="p-4">
-                <div className="flex gap-4">
-                  {/* Image placeholder */}
-                  <div className="w-16 h-16 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Package className="w-8 h-8 text-muted-foreground/40" />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-sm leading-tight line-clamp-2 mb-0.5">
-                      {product.name}
-                    </h3>
-                    <Badge variant="secondary" className="text-[10px] mb-2">{product.category}</Badge>
-                    <p className="text-primary font-bold">
-                      {formatCurrency(product.price * qty)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatCurrency(product.price)} × {qty}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col items-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7 text-muted-foreground hover:text-destructive"
-                      onClick={() => removeItem(product.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                    <div className="flex items-center gap-1 border rounded-md">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="w-7 h-7"
-                        onClick={() => updateQty(product.id, qty - 1)}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </Button>
-                      <span className="w-8 text-center text-sm font-medium">{qty}</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="w-7 h-7"
-                        disabled={qty >= product.stock}
-                        onClick={() => updateQty(product.id, qty + 1)}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </Button>
-                    </div>
-                    {qty >= product.stock && (
-                      <span className="text-[10px] text-amber-600 font-medium flex items-center gap-0.5">
-                        <AlertTriangle className="w-3 h-3" />
-                        Máx. estoque
-                      </span>
-                    )}
-                  </div>
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        {/* Itens */}
+        <div className="space-y-3">
+          {rows.map(({ item, product }) => (
+            <Card key={item.id}>
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/50">
+                  {isSafeImageUrl(product.image_url) ? (
+                    <img
+                      src={product.image_url}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <Package className="h-6 w-6 text-muted-foreground/40" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{product.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {product.sku}
+                    {product.unit ? ` · ${product.unit}` : ''}
+                  </p>
+                  <p className="mt-1 text-sm">
+                    <span className="text-muted-foreground">Preço unitário: </span>
+                    <span className="font-semibold">{formatCurrency(item.unit_price)}</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={busy || item.quantity <= 1}
+                    onClick={() => handleUpdateQty(item.id, item.quantity - 1)}
+                    aria-label="Diminuir"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  <span className="w-10 text-center text-sm font-medium">{item.quantity}</span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={busy}
+                    onClick={() => handleUpdateQty(item.id, item.quantity + 1)}
+                    aria-label="Aumentar"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="w-28 text-right">
+                  <p className="font-semibold">{formatCurrency(item.subtotal)}</p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    disabled={busy}
+                    onClick={() => handleRemove(item.id)}
+                  >
+                    <Trash2 className="mr-1 h-4 w-4" />
+                    Remover
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           ))}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={() => clearCart()}
-          >
-            <Trash2 className="w-4 h-4 mr-1.5" />
-            Limpar carrinho
-          </Button>
         </div>
 
-        {/* Order Summary */}
-        <div className="lg:col-span-1">
-          <Card className="sticky top-20">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">Resumo do pedido</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {items.map(({ product, qty }) => (
-                <div key={product.id} className="flex justify-between text-sm">
-                  <span className="text-muted-foreground line-clamp-1 flex-1 mr-2">
-                    {product.name} × {qty}
-                  </span>
-                  <span className="font-medium flex-shrink-0">
-                    {formatCurrency(product.price * qty)}
-                  </span>
-                </div>
-              ))}
-
-              <Separator />
-
-              <div className="flex justify-between">
-                <span className="font-semibold">Total</span>
-                <span className="font-bold text-lg text-primary">{formatCurrency(total)}</span>
-              </div>
-
-              <Button
-                className="w-full mt-4"
-                size="lg"
-                onClick={handleFinalize}
-                disabled={ordering}
-              >
-                {ordering ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                    Enviando...
-                  </>
-                ) : (
-                  <>
-                    <ShoppingCart className="w-4 h-4 mr-2" />
-                    Finalizar Pedido
-                  </>
-                )}
-              </Button>
-
-              <p className="text-xs text-center text-muted-foreground">
-                Sujeito à aprovação pela TechMax
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Resumo — total SEMPRE vindo do backend (preços negociados validados). */}
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle className="text-base">Resumo</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Itens</span>
+              <span>{items.reduce((s, i) => s + i.quantity, 0)}</span>
+            </div>
+            <div className="flex items-center justify-between border-t pt-3">
+              <span className="font-medium">Total</span>
+              <span className="text-xl font-bold">{formatCurrency(total)}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Os preços são calculados e validados pelo servidor conforme a sua negociação.
+            </p>
+            <Button className="w-full" onClick={handleFinalize} disabled={ordering}>
+              {ordering ? 'Enviando…' : 'Finalizar pedido'}
+            </Button>
+            <Button variant="ghost" className="w-full" onClick={() => navigate('/loja')}>
+              Continuar comprando
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

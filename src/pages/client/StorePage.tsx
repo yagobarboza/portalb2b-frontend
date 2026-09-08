@@ -1,386 +1,310 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { mockProducts, mockCategories } from '../../data/mock';
-import { useCart } from '../../context/CartContext';
-import { useAuth } from '../../context/AuthContext';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Card, CardContent, CardFooter } from '../../components/ui/card';
-import { Badge } from '../../components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '../../components/ui/dialog';
-import { Separator } from '../../components/ui/separator';
-
-import { Search, ShoppingCart, Plus, Package, Minus, Check, SlidersHorizontal, X } from 'lucide-react';
-import { formatCurrency } from '../../lib/format';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import type { Product } from '../../types';
+import { Package, Search, ShoppingCart } from 'lucide-react';
+import { api, ApiError } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
+import { useCart } from '../../context/CartContext';
+import { isSafeImageUrl } from '../../lib/uploads';
+import type { Category, PriceQuote, Product, ProductPage } from '@/types/api';
+import { formatCurrency } from '../../lib/format';
+import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent } from '../../components/ui/card';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '../../components/ui/dialog';
+import { Input } from '../../components/ui/input';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../../components/ui/select';
 
 type SortOption = 'relevance' | 'price-asc' | 'price-desc' | 'name-asc';
 
+const PAGE_SIZE = 60;
+
 export default function StorePage() {
-  const { addItem, count } = useCart();
-  const { currentUser } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { addItem, registerProduct } = useCart();
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
+  const [searchDebounced, setSearchDebounced] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
-  const [showFilters, setShowFilters] = useState(false);
+
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [detailQuote, setDetailQuote] = useState<PriceQuote | null>(null);
   const [detailQty, setDetailQty] = useState(1);
-  const [cardQty, setCardQty] = useState<Record<string, number>>({});
+  const [adding, setAdding] = useState(false);
 
-  const categories = ['Todos', ...mockCategories];
+  const firstName = user?.full_name?.trim().split(' ')[0] || 'visitante';
 
-  const filtered = useMemo(() => {
-    let result = mockProducts.filter((p) => {
-      const matchSearch =
-        !search ||
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.description.toLowerCase().includes(search.toLowerCase()) ||
-        p.sku.toLowerCase().includes(search.toLowerCase());
-      const matchCat = selectedCategory === 'Todos' || p.category === selectedCategory;
-      return matchSearch && matchCat && p.active;
-    });
+  // Debounce da busca (evita flood).
+  useEffect(() => {
+    const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
+    return () => window.clearTimeout(t);
+  }, [search]);
 
-    switch (sortBy) {
-      case 'price-asc':
-        result = [...result].sort((a, b) => a.price - b.price);
-        break;
-      case 'price-desc':
-        result = [...result].sort((a, b) => b.price - a.price);
-        break;
-      case 'name-asc':
-        result = [...result].sort((a, b) => a.name.localeCompare(b.name));
-        break;
+  // Categorias.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const data = await api.get<Category[]>('/catalog/categories');
+        if (active) setCategories(data);
+      } catch {
+        // Sem categorias → filtro único "Todos".
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // Produtos (backend filtra/ordena; preço negociado é recalculado pelo backend).
+  const loadProducts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const sortParams =
+        sortBy === 'price-asc' ? { sort_by: 'price', sort_dir: 'asc' }
+        : sortBy === 'price-desc' ? { sort_by: 'price', sort_dir: 'desc' }
+        : sortBy === 'name-asc' ? { sort_by: 'name', sort_dir: 'asc' }
+        : {};
+      const data = await api.get<ProductPage>('/catalog/products', {
+        page: 1,
+        page_size: PAGE_SIZE,
+        search: searchDebounced || undefined,
+        category_id: selectedCategory || undefined,
+        ...sortParams,
+      });
+      setProducts(data.items);
+      data.items.forEach(registerProduct);
+    } catch {
+      toast.error('Não foi possível carregar a vitrine.');
+    } finally {
+      setLoading(false);
     }
-    return result;
-  }, [search, selectedCategory, sortBy]);
+  }, [searchDebounced, selectedCategory, sortBy, registerProduct]);
 
-  const handleAddToCart = (product: Product, qty = 1) => {
-    addItem(product, qty);
-    toast.success(`${product.name} adicionado ao carrinho!`);
+  useEffect(() => { loadProducts(); }, [loadProducts]);
+
+  const handleAdd = async (product: Product, qty: number) => {
+    setAdding(true);
+    try {
+      await addItem(product.id, qty);
+      registerProduct(product);
+      toast.success(`${product.name} adicionado ao carrinho.`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao adicionar ao carrinho.');
+    } finally {
+      setAdding(false);
+    }
   };
 
-  const getCardQty = (productId: string) => cardQty[productId] || 1;
-  const setQty = (productId: string, qty: number, stock: number) => {
-    setCardQty((prev) => ({ ...prev, [productId]: Math.max(1, Math.min(qty, stock)) }));
-  };
-
-  const addFromCard = (product: Product) => {
-    handleAddToCart(product, getCardQty(product.id));
-    setCardQty((prev) => ({ ...prev, [product.id]: 1 }));
-  };
-
-  const openDetail = (product: Product) => {
+  // Ao abrir o detalhe, consulta o preço negociado do cliente (se houver customer_id).
+  const openDetail = async (product: Product) => {
     setDetailProduct(product);
+    setDetailQuote(null);
     setDetailQty(1);
-  };
-
-  const addFromDetail = () => {
-    if (detailProduct) {
-      handleAddToCart(detailProduct, detailQty);
-      setDetailProduct(null);
+    if (user?.customer_id) {
+      try {
+        const quote = await api.get<PriceQuote>(
+          `/catalog/products/${product.id}/quote`,
+          { customer_id: user.customer_id }
+        );
+        setDetailQuote(quote);
+      } catch {
+        setDetailQuote(null); // segue com preço padrão; backend valida no carrinho
+      }
     }
   };
+
+  // Disponibilidade do produto em detalhe (escopo do dialog).
+  const unavailable = detailProduct ? (detailProduct.stock ?? 0) <= 0 : false;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      {/* Page Header */}
+    <div className="mx-auto max-w-7xl px-4 py-8">
+      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-foreground">Vitrine</h1>
-        <p className="text-muted-foreground mt-1">
-          Olá, <strong>{currentUser?.name.split(' ')[0]}</strong>! Explore nosso catálogo de produtos.
+        <p className="mt-1 text-muted-foreground">
+          Olá, <strong>{firstName}</strong>! Explore o catálogo de produtos.
         </p>
       </div>
 
-      {/* Search + Sort + Cart */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      {/* Filtros */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nome ou SKU..."
             className="pl-9"
+            placeholder="Buscar produtos…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setShowFilters(!showFilters)}
-            className="sm:hidden"
-          >
-            <SlidersHorizontal className="w-4 h-4 mr-2" />
-            Filtros
-          </Button>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            <option value="relevance">Relevância</option>
-            <option value="price-asc">Menor preço</option>
-            <option value="price-desc">Maior preço</option>
-            <option value="name-asc">Nome A-Z</option>
-          </select>
-          <Button onClick={() => navigate('/carrinho')} className="sm:hidden">
-            <ShoppingCart className="w-4 h-4 mr-2" />
-            ({count})
-          </Button>
+        <div className="w-full sm:w-56">
+          <Select value={selectedCategory || 'all'} onValueChange={(v) => setSelectedCategory(v === 'all' ? '' : v)}>
+            <SelectTrigger className="w-full"><SelectValue placeholder="Todas as categorias" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as categorias</SelectItem>
+              {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-full sm:w-56">
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="relevance">Mais relevantes</SelectItem>
+              <SelectItem value="price-asc">Menor preço</SelectItem>
+              <SelectItem value="price-desc">Maior preço</SelectItem>
+              <SelectItem value="name-asc">Nome (A-Z)</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      {/* Category Tabs - Desktop */}
-      <div className={`${showFilters ? 'flex' : 'hidden'} sm:flex flex-wrap gap-2 mb-6`}>
-        {categories.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
-              selectedCategory === cat
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Results count */}
-      <p className="text-sm text-muted-foreground mb-4">
-        {filtered.length} produto{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
-      </p>
-
-      {/* Product Grid */}
-      {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Package className="w-16 h-16 text-muted-foreground/30 mb-4" />
+      {/* Grid */}
+      {loading ? (
+        <p className="py-16 text-center text-muted-foreground">Carregando produtos…</p>
+      ) : products.length === 0 ? (
+        <div className="py-16 text-center">
+          <Package className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
           <h3 className="text-lg font-semibold text-muted-foreground">Nenhum produto encontrado</h3>
-          <p className="text-sm text-muted-foreground/70 mt-1">Tente ajustar seus filtros de busca</p>
+          <p className="mt-1 text-sm text-muted-foreground/70">Tente ajustar a busca ou os filtros.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {filtered.map((product) => (
-            <Card
-              key={product.id}
-              className="group hover:shadow-md transition-all overflow-hidden flex flex-col cursor-pointer"
-              onClick={() => openDetail(product)}
-            >
-              {/* Product Image */}
-              <div className="aspect-square bg-gradient-to-br from-muted/50 to-muted/30 flex items-center justify-center relative overflow-hidden">
-                <div className="w-16 h-16 text-muted-foreground/20 transition-transform group-hover:scale-110">
-                  <Package className="w-full h-full" />
-                </div>
-                <Badge className="absolute top-2 left-2 text-[10px]" variant="secondary">
-                  {product.category}
-                </Badge>
-                {product.stock <= 5 && product.stock > 0 && (
-                  <Badge className="absolute top-2 right-2 text-[10px] bg-amber-500 text-white">
-                    Últimas unidades
-                  </Badge>
-                )}
-                {product.stock === 0 && (
-                  <Badge className="absolute top-2 right-2 text-[10px] bg-destructive text-white">
-                    Esgotado
-                  </Badge>
-                )}
-              </div>
-
-              <CardContent className="p-3 flex-1 flex flex-col">
-                <p className="text-[10px] text-muted-foreground font-mono mb-1">{product.sku}</p>
-                <h3 className="font-medium text-sm leading-tight line-clamp-2 mb-1">
-                  {product.name}
-                </h3>
-                <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                  {product.description}
-                </p>
-                <div className="mt-auto">
-                  <span className="text-lg font-bold text-primary">
-                    {formatCurrency(product.price)}
-                  </span>
-                  <p className="text-xs text-muted-foreground">
-                    {product.stock > 0 ? `${product.stock} em estoque` : 'Indisponível'}
-                  </p>
-                </div>
-              </CardContent>
-
-              <CardFooter className="p-3 pt-0 flex-col gap-2">
-                <div className="flex items-center justify-between w-full">
-                  <span className="text-xs text-muted-foreground">Qtd:</span>
-                  <div className="flex items-center gap-1 border rounded-md">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {products.map((p) => {
+            const out = (p.stock ?? 0) <= 0;
+            return (
+              <Card
+                key={p.id}
+                className="cursor-pointer transition-shadow hover:shadow-md"
+                onClick={() => openDetail(p)}
+              >
+                <CardContent className="flex h-full flex-col p-3">
+                  <div className="mb-3 flex h-32 w-full items-center justify-center overflow-hidden rounded-md bg-muted/50">
+                    {isSafeImageUrl(p.image_url) ? (
+                      <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
+                    ) : (
+                      <Package className="h-8 w-8 text-muted-foreground/40" />
+                    )}
+                  </div>
+                  <div className="flex flex-1 flex-col">
+                    <p className="line-clamp-2 text-sm font-medium">{p.name}</p>
+                    {p.brand && <p className="mt-0.5 text-xs text-muted-foreground">{p.brand}</p>}
+                    <div className="mt-2 flex items-end justify-between">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Preço padrão</p>
+                        <p className="text-base font-bold">{formatCurrency(p.price)}</p>
+                      </div>
+                      {p.unit && <span className="text-[10px] text-muted-foreground">{p.unit}</span>}
+                    </div>
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7"
-                      disabled={product.stock === 0}
+                      className="mt-3 w-full"
+                      size="sm"
+                      disabled={out || adding}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setQty(product.id, getCardQty(product.id) - 1, product.stock);
+                        handleAdd(p, 1);
                       }}
                     >
-                      <Minus className="w-3 h-3" />
-                    </Button>
-                    <input
-                      type="number"
-                      className="w-10 text-center text-sm font-medium border-0 bg-transparent outline-none"
-                      value={getCardQty(product.id)}
-                      min={1}
-                      max={product.stock}
-                      disabled={product.stock === 0}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value) || 1;
-                        setQty(product.id, v, product.stock);
-                      }}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7"
-                      disabled={product.stock === 0 || getCardQty(product.id) >= product.stock}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQty(product.id, getCardQty(product.id) + 1, product.stock);
-                      }}
-                    >
-                      <Plus className="w-3 h-3" />
+                      <ShoppingCart className="mr-2 h-4 w-4" />
+                      {out ? 'Esgotado' : 'Adicionar'}
                     </Button>
                   </div>
-                </div>
-                {getCardQty(product.id) >= product.stock && product.stock > 0 && (
-                  <p className="text-[10px] text-amber-600 font-medium w-full text-center">
-                    Limite de estoque atingido
-                  </p>
-                )}
-                <Button
-                  className="w-full"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    addFromCard(product);
-                  }}
-                  disabled={product.stock === 0}
-                >
-                  <ShoppingCart className="w-4 h-4 mr-1" />
-                  Adicionar · {formatCurrency(product.price * getCardQty(product.id))}
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      {/* Product Detail Dialog */}
-      <Dialog open={!!detailProduct} onOpenChange={(open) => !open && setDetailProduct(null)}>
-        {detailProduct && (
-          <DialogContent className="max-w-3xl p-0 overflow-hidden">
-            <DialogHeader className="sr-only">
-              <DialogTitle>{detailProduct.name}</DialogTitle>
-            </DialogHeader>
-            <div className="grid sm:grid-cols-2 gap-0">
-              {/* Image side */}
-              <div className="aspect-square bg-gradient-to-br from-muted/50 to-muted/30 flex items-center justify-center relative">
-                <div className="w-24 h-24 text-muted-foreground/20">
-                  <Package className="w-full h-full" />
+      {/* Detalhe + cotação */}
+      <Dialog open={!!detailProduct} onOpenChange={(o) => { if (!o) { setDetailProduct(null); setDetailQuote(null); } }}>
+        <DialogContent className="max-w-md">
+          {detailProduct && (
+            <>
+              <DialogHeader><DialogTitle>{detailProduct.name}</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <div className="flex h-44 w-full items-center justify-center overflow-hidden rounded-md bg-muted/50">
+                  {isSafeImageUrl(detailProduct.image_url) ? (
+                    <img src={detailProduct.image_url} alt={detailProduct.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <Package className="h-10 w-10 text-muted-foreground/40" />
+                  )}
                 </div>
-                <Badge className="absolute top-3 left-3" variant="secondary">
-                  {detailProduct.category}
-                </Badge>
-              </div>
-
-              {/* Info side */}
-              <div className="p-6 flex flex-col">
-                <div className="flex-1">
-                  <p className="text-xs text-muted-foreground font-mono mb-2">
-                    SKU: {detailProduct.sku}
-                  </p>
-                  <h2 className="text-xl font-bold leading-tight mb-2">
-                    {detailProduct.name}
-                  </h2>
-                  <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                    {detailProduct.description}
-                  </p>
-                  <Separator className="my-4" />
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Categoria</span>
-                      <span className="font-medium">{detailProduct.category}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Disponibilidade</span>
-                      {detailProduct.stock > 0 ? (
-                        <span className="font-medium text-emerald-600 flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" />
-                          {detailProduct.stock} em estoque
-                        </span>
-                      ) : (
-                        <span className="font-medium text-destructive">Esgotado</span>
-                      )}
-                    </div>
-                  </div>
+                {detailProduct.description && (
+                  <p className="text-sm text-muted-foreground">{detailProduct.description}</p>
+                )}
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {detailProduct.sku && <Badge variant="secondary">SKU {detailProduct.sku}</Badge>}
+                  {detailProduct.brand && <Badge variant="secondary">{detailProduct.brand}</Badge>}
+                  {detailProduct.unit && <Badge variant="secondary">{detailProduct.unit}</Badge>}
+                  {detailProduct.stock !== null && detailProduct.stock !== undefined && (
+                    <Badge variant={unavailable ? 'destructive' : 'default'}>
+                      {unavailable ? 'Esgotado' : `${detailProduct.stock} em estoque`}
+                    </Badge>
+                  )}
                 </div>
 
-                <Separator className="my-4" />
-
-                <div className="space-y-4">
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Preço unitário</p>
-                      <span className="text-2xl font-bold text-primary">
-                        {formatCurrency(detailProduct.price)}
-                      </span>
-                    </div>
-                    {detailProduct.stock > 0 && (
-                      <div className="flex items-center gap-2 border rounded-md">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-8 h-8"
-                          onClick={() => setDetailQty((q) => Math.max(1, q - 1))}
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </Button>
-                        <span className="w-8 text-center text-sm font-medium">{detailQty}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-8 h-8"
-                          onClick={() => setDetailQty((q) => Math.min(detailProduct.stock, q + 1))}
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                {/* Preço: prioriza a cotação do cliente (backend); senão preço padrão */}
+                <div className="rounded-md bg-muted/40 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    {detailQuote && detailQuote.price_source === 'customer'
+                      ? 'Preço negociado para o seu perfil'
+                      : detailQuote && detailQuote.price_source === 'price_list'
+                        ? 'Preço de tabela'
+                        : 'Preço padrão'}
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {formatCurrency((detailQuote?.final_price ?? detailProduct.price) * detailQty)}
+                  </p>
+                  {detailQuote && detailQuote.customer_price !== null &&
+                    detailQuote.base_price !== detailQuote.final_price && (
+                      <p className="text-xs text-muted-foreground line-through">
+                        {formatCurrency(detailQuote.base_price * detailQty)}
+                      </p>
                     )}
-                  </div>
+                </div>
 
+                <div className="flex items-center gap-2">
                   <Button
-                    className="w-full"
-                    size="lg"
-                    onClick={addFromDetail}
-                    disabled={detailProduct.stock === 0}
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={detailQty <= 1}
+                    onClick={() => setDetailQty((q) => Math.max(1, q - 1))}
+                    aria-label="Diminuir quantidade"
                   >
-                    <ShoppingCart className="w-4 h-4 mr-2" />
-                    Adicionar ao carrinho · {formatCurrency(detailProduct.price * detailQty)}
+                    −
+                  </Button>
+                  <span className="w-12 text-center text-sm font-medium">{detailQty}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setDetailQty((q) => q + 1)}
+                    aria-label="Aumentar quantidade"
+                  >
+                    +
+                  </Button>
+                  <Button
+                    className="ml-auto"
+                    disabled={unavailable || adding}
+                    onClick={() => handleAdd(detailProduct, detailQty)}
+                  >
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Adicionar ao carrinho
                   </Button>
                 </div>
               </div>
-            </div>
-          </DialogContent>
-        )}
+            </>
+          )}
+        </DialogContent>
       </Dialog>
     </div>
   );

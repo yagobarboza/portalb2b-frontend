@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { Outlet, useNavigate, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useBranding } from '../lib/useBranding';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
+import NotificationsBell from '../components/notifications/NotificationsBell';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,14 +39,28 @@ const navLinks = [
 ];
 
 export default function ClientLayout() {
-  const { currentUser, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { count } = useCart();
+  // Branding do tenant (Bloco 2): logo/nome validados, cores injetadas com whitelist.
+  const { branding, logoUrl } = useBranding();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  // Exibição defensiva: nunca assume nome preenchido (evita crash e dados vazios na UI).
+  const displayName = user?.full_name?.trim() || 'Usuário';
+  const userInitial = displayName.charAt(0).toUpperCase();
+  const firstName = displayName.split(' ')[0];
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      // Revoga a sessão no backend (POST /auth/logout) e só então redireciona.
+      await logout();
+    } finally {
+      navigate('/login');
+    }
   };
 
   return (
@@ -52,14 +68,23 @@ export default function ClientLayout() {
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-4">
-          {/* Logo */}
+          {/* Logo — branding real do tenant com fallback institucional nydB2B */}
           <div className="flex items-center gap-2 mr-4 flex-shrink-0">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <Zap className="w-5 h-5 text-primary-foreground" />
-            </div>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={branding?.name ?? 'nydB2B'}
+                className="h-8 w-8 rounded-lg object-contain"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <Zap className="w-5 h-5 text-primary-foreground" />
+              </div>
+            )}
             <div className="hidden sm:block">
-              <span className="font-bold text-base leading-none">TechMax</span>
-              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">Distribuidora</p>
+              <span className="font-bold text-base leading-none">{branding?.name ?? 'nydB2B'}</span>
+              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">Portal do Cliente</p>
             </div>
           </div>
 
@@ -87,6 +112,9 @@ export default function ClientLayout() {
           <div className="flex-1" />
 
           <ModeToggle />
+
+          {/* Notificações (Bloco 10) */}
+          <NotificationsBell />
 
           {/* Search */}
           <div className="relative hidden sm:block w-64">
@@ -119,25 +147,28 @@ export default function ClientLayout() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center gap-2 px-3">
                 <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center">
-                  <span className="text-xs font-bold text-primary-foreground">
-                    {currentUser?.name.charAt(0)}
-                  </span>
+                  <span className="text-xs font-bold text-primary-foreground">{userInitial}</span>
                 </div>
-                <span className="hidden sm:inline text-sm font-medium">
-                  {currentUser?.name.split(' ')[0]}
-                </span>
+                <span className="hidden sm:inline text-sm font-medium">{firstName}</span>
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem disabled>
                 <User className="w-4 h-4 mr-2" />
-                {currentUser?.name}
+                {displayName}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled className="text-muted-foreground text-xs">
+                {user?.email}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive">
+              <DropdownMenuItem
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="text-destructive"
+              >
                 <LogOut className="w-4 h-4 mr-2" />
-                Sair
+                {loggingOut ? 'Saindo…' : 'Sair'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

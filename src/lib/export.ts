@@ -1,19 +1,37 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import type { Order } from '../types';
-import { mockProducts } from '../data/mock';
+import type { Order, OrderItem } from '../types/api';
+import { mockProducts, customerName } from '../data/mock';
 import { formatCurrency, formatDate, formatDateTime } from './format';
 
+// Todos os status do pedido (OrderStatus) com rótulo PT-BR.
 const STATUS_LABELS: Record<string, string> = {
-  submitted: 'Aguardando Aprovação',
+  draft: 'Rascunho',
+  submitted: 'Enviado',
+  received: 'Recebido',
+  under_review: 'Em Análise',
+  awaiting_customer: 'Aguardando Cliente',
   approved: 'Aprovado',
+  processing: 'Em Processamento',
+  invoiced: 'Faturado',
   shipped: 'Enviado/Entregue',
+  completed: 'Concluído',
   cancelled: 'Cancelado',
 };
 
 function orderNumber(id: string): string {
   return `#${id.replace('order-', '').toUpperCase()}`;
+}
+
+// Resolve SKU do produto pelo id (fallback: o próprio id).
+function productSku(productId: string): string {
+  return mockProducts.find((p) => p.id === productId)?.sku || productId;
+}
+
+// Resolve nome do produto pelo id (fallback: o próprio id).
+function productName(productId: string): string {
+  return mockProducts.find((p) => p.id === productId)?.name || productId;
 }
 
 export function exportOrderPDF(order: Order, companyName: string) {
@@ -28,7 +46,6 @@ export function exportOrderPDF(order: Order, companyName: string) {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100);
   doc.text('Relatório de Pedido', 14, 27);
-
   doc.setDrawColor(220);
   doc.line(14, 31, pageWidth - 14, 31);
 
@@ -39,23 +56,23 @@ export function exportOrderPDF(order: Order, companyName: string) {
   doc.text(orderNumber(order.id), 14, 40);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(`Data de emissão: ${formatDate(order.createdAt)}`, 14, 46);
-  doc.text(`Cliente: ${order.customerName}`, 14, 52);
+  doc.text(`Data de emissão: ${formatDate(order.created_at)}`, 14, 46);
+  doc.text(`Cliente: ${customerName(order.customer_id)}`, 14, 52);
   doc.text(`Status: ${STATUS_LABELS[order.status] || order.status}`, 14, 58);
-  if (order.note) {
-    doc.text(`Observação: ${order.note}`, 14, 64);
+  if (order.notes) {
+    doc.text(`Observação: ${order.notes}`, 14, 64);
   }
 
   // Items table
   autoTable(doc, {
-    startY: order.note ? 70 : 64,
+    startY: order.notes ? 70 : 64,
     head: [['SKU', 'Produto', 'Qtd', 'Preço Unit.', 'Subtotal']],
-    body: order.items.map((item) => [
-      mockProducts.find((product) => product.id === item.productId)?.sku || item.productId,
-      item.productName,
-      String(item.qty),
-      formatCurrency(item.unitPrice),
-      formatCurrency(item.unitPrice * item.qty),
+    body: order.items.map((item: OrderItem) => [
+      productSku(item.product_id),
+      productName(item.product_id),
+      String(item.quantity),
+      formatCurrency(item.unit_price),
+      formatCurrency(item.subtotal),
     ]),
     headStyles: { fillColor: [30, 64, 175], fontSize: 9 },
     bodyStyles: { fontSize: 9 },
@@ -78,24 +95,22 @@ export function exportOrderPDF(order: Order, companyName: string) {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(150);
   doc.text(`Gerado em ${formatDateTime(new Date().toISOString())}`, 14, doc.internal.pageSize.getHeight() - 10);
-
   doc.save(`pedido-${order.id.replace('order-', '')}.pdf`);
 }
 
 export function exportOrderXLSX(order: Order) {
-  const rows = order.items.map((item) => ({
+  const rows = order.items.map((item: OrderItem) => ({
     'Número do Pedido': orderNumber(order.id),
-    'Data': formatDate(order.createdAt),
-    'Cliente': order.customerName,
-    'Produto': item.productName,
-    'SKU': mockProducts.find((product) => product.id === item.productId)?.sku || item.productId,
-    'Quantidade': item.qty,
-    'Preço Unitário': item.unitPrice,
-    'Subtotal': item.unitPrice * item.qty,
+    'Data': formatDate(order.created_at),
+    'Cliente': customerName(order.customer_id),
+    'Produto': productName(item.product_id),
+    'SKU': productSku(item.product_id),
+    'Quantidade': item.quantity,
+    'Preço Unitário': item.unit_price,
+    'Subtotal': item.subtotal,
     'Status': STATUS_LABELS[order.status] || order.status,
     'Total Geral': order.total,
   }));
-
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
     { wch: 16 }, { wch: 12 }, { wch: 28 }, { wch: 36 }, { wch: 12 },
@@ -122,7 +137,6 @@ export function exportOrdersReportPDF(
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100);
   doc.text('Relatório de Pedidos', 14, 27);
-
   doc.setDrawColor(220);
   doc.line(14, 31, pageWidth - 14, 31);
 
@@ -146,8 +160,7 @@ export function exportOrdersReportPDF(
   const approved = orders.filter((o) => o.status === 'approved').length;
   const denied = orders.filter((o) => o.status === 'cancelled').length;
   const totalValue = orders.reduce((s, o) => s + o.total, 0);
-  const totalItems = orders.reduce((s, o) => s + o.items.reduce((q, i) => q + i.qty, 0), 0);
-
+  const totalItems = orders.reduce((s, o) => s + o.items.reduce((q, i) => q + i.quantity, 0), 0);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   y += 2;
@@ -167,9 +180,9 @@ export function exportOrdersReportPDF(
     head: [['Pedido', 'Cliente', 'Data', 'Itens', 'Valor', 'Status']],
     body: orders.map((o) => [
       orderNumber(o.id),
-      o.customerName,
-      formatDate(o.createdAt),
-      String(o.items.reduce((q, i) => q + i.qty, 0)),
+      customerName(o.customer_id),
+      formatDate(o.created_at),
+      String(o.items.reduce((q, i) => q + i.quantity, 0)),
       formatCurrency(o.total),
       STATUS_LABELS[o.status] || o.status,
     ]),
@@ -183,24 +196,21 @@ export function exportOrdersReportPDF(
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(150);
   doc.text(`Gerado em ${formatDateTime(new Date().toISOString())}`, 14, doc.internal.pageSize.getHeight() - 10);
-
   doc.save('relatorio-pedidos.pdf');
 }
 
 export function exportOrdersReportXLSX(orders: Order[]) {
   const rows = orders.map((o) => ({
     'Número do Pedido': orderNumber(o.id),
-    'Cliente': o.customerName,
-    'Data': formatDate(o.createdAt),
-    'Itens': o.items.reduce((q, i) => q + i.qty, 0),
+    'Cliente': customerName(o.customer_id),
+    'Data': formatDate(o.created_at),
+    'Itens': o.items.reduce((q, i) => q + i.quantity, 0),
     'Valor': o.total,
     'Status': STATUS_LABELS[o.status] || o.status,
-    'Atualizado em': formatDate(o.updatedAt),
   }));
-
   const ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
-    { wch: 16 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 20 }, { wch: 14 },
+    { wch: 16 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 20 },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');

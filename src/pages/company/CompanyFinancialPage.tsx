@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Card,
-  CardContent
+  CardContent,
 } from '../../components/ui/card';
 import {
   Table,
@@ -9,7 +9,7 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow
+  TableRow,
 } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -18,7 +18,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogHeader,
-  DialogTitle
+  DialogTitle,
 } from '../../components/ui/dialog';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Loader2, Eye, ArrowLeft, ArrowRight } from 'lucide-react';
@@ -41,7 +41,7 @@ const TABS: Array<{ key: FinancialAccountStatus; label: string }> = [
 
 const PAGE_SIZE = 20;
 
-export default function FinancialPage() {
+export default function CompanyFinancialPage() {
   const [tab, setTab] = useState<FinancialAccountStatus>('open');
   const [items, setItems] = useState<FinancialAccount[]>([]);
   const [total, setTotal] = useState(0);
@@ -102,14 +102,13 @@ export default function FinancialPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground">Financeiro</h1>
-        <p className="text-muted-foreground mt-1">Acompanhe suas faturas e pagamentos</p>
+        <h1 className="text-2xl font-bold">Financeiro</h1>
+        <p className="text-muted-foreground text-sm mt-1">Contas dos clientes (abertas, pagas e vencidas)</p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total em Aberto</p>
@@ -130,7 +129,6 @@ export default function FinancialPage() {
         </Card>
       </div>
 
-      {/* Tabs */}
       <div className="flex items-center gap-1 mb-4 border-b">
         {TABS.map((t) => (
           <button
@@ -148,7 +146,6 @@ export default function FinancialPage() {
         ))}
       </div>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           {loading ? (
@@ -202,34 +199,22 @@ export default function FinancialPage() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
       {!loading && !error && pages > 1 && (
         <div className="flex items-center justify-center gap-3 mt-4 text-sm">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => load(tab, page - 1)}
-          >
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => load(tab, page - 1)}>
             <ArrowLeft className="w-4 h-4 mr-1" />
             Anterior
           </Button>
           <span className="text-muted-foreground">
             Página {page} de {pages}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= pages}
-            onClick={() => load(tab, page + 1)}
-          >
+          <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => load(tab, page + 1)}>
             Próxima
             <ArrowRight className="w-4 h-4 ml-1" />
           </Button>
         </div>
       )}
 
-      {/* Detail dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent>
           <DialogHeader>

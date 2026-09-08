@@ -1,23 +1,37 @@
-import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import type { Role } from '../types';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useAuth, resolveProfile, type UserProfile } from '../context/AuthContext';
 
 interface ProtectedRouteProps {
-  allowedRoles?: Role[];
+  profiles?: UserProfile[];
+  requiredPermission?: string;
 }
 
-export default function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
-  const { currentUser } = useAuth();
+export default function ProtectedRoute({ profiles, requiredPermission }: ProtectedRouteProps) {
+  const { user, isLoading, hasPermission } = useAuth();
+  const location = useLocation();
 
-  if (!currentUser) {
-    return <Navigate to="/login" replace />;
+  // Evita "flash" de redirecionamento enquanto a sessão é restaurada via /auth/me.
+  if (isLoading) {
+    return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Carregando…</div>;
   }
 
-  if (allowedRoles && !allowedRoles.includes(currentUser.role)) {
-    // Redirect to their correct home
-    if (currentUser.role === 'cliente') return <Navigate to="/loja" replace />;
-    if (currentUser.role === 'admin') return <Navigate to="/empresa" replace />;
-    if (currentUser.role === 'superadmin') return <Navigate to="/superadmin" replace />;
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  const profile = resolveProfile(user);
+
+  // Perfil não permitido nesta área → redireciona para a rota correta do usuário.
+  if (profiles && profile && !profiles.includes(profile)) {
+    if (profile === 'superadmin') return <Navigate to="/superadmin" replace />;
+    if (profile === 'cliente') return <Navigate to="/loja" replace />;
+    if (profile === 'empresa') return <Navigate to="/empresa" replace />;
+  }
+
+  // RBAC: permissão exigida ausente → redireciona (o backend SEMPRE revalida).
+  if (requiredPermission && !hasPermission(requiredPermission)) {
+    const home = profile === 'cliente' ? '/loja' : profile === 'empresa' ? '/empresa' : '/superadmin';
+    return <Navigate to={home} replace />;
   }
 
   return <Outlet />;

@@ -1,103 +1,7 @@
-export type Role = 'cliente' | 'admin' | 'superadmin';
+// ===== Re-exporta os tipos de contrato da API (schemas do backend) =====
+export * from './api';
 
-export interface User {
-  id: string;
-  email: string;
-  password: string;
-  name: string;
-  role: Role;
-  tenantId?: string;
-}
-
-export interface Tenant {
-  id: string;
-  name: string;
-  slug: string;
-  primaryColor: string;
-  logo?: string;
-  active: boolean;
-}
-
-export interface Category {
-  id: string;
-  name: string;
-}
-
-export interface Product {
-  id: string;
-  sku: string;
-  name: string;
-  category: string;
-  description: string;
-  price: number;
-  stock: number;
-  imageUrl?: string;
-  tenantId: string;
-  active: boolean;
-}
-
-export interface CustomerPricing {
-  productId: string;
-  price: number;
-}
-
-export interface Customer {
-  id: string;
-  name: string;
-  fantasyName?: string;
-  email: string;
-  cnpj: string;
-  phone: string;
-  address: string;
-  city: string;
-  state: string;
-  cep?: string;
-  status: 'ativo' | 'inativo';
-  tenantId: string;
-  negotiatedPrices: CustomerPricing[];
-  userId?: string;
-}
-
-export type OrderStatus = 'submitted' | 'approved' | 'shipped' | 'cancelled';
-
-export interface OrderItem {
-  productId: string;
-  productName: string;
-  qty: number;
-  unitPrice: number;
-}
-
-export interface Order {
-  id: string;
-  customerId: string;
-  customerName: string;
-  status: OrderStatus;
-  items: OrderItem[];
-  total: number;
-  createdAt: string;
-  updatedAt: string;
-  note?: string;
-  tenantId: string;
-}
-
-export type TicketPriority = 'baixa' | 'média' | 'alta' | 'urgente';
-export type TicketStatus = 'aberto' | 'em_andamento' | 'aguardando_cliente' | 'resolvido' | 'fechado';
-
-export interface TicketAttachment {
-  id: string;
-  name: string;
-  type: string;
-  url: string;
-}
-
-export interface TicketMessage {
-  id: string;
-  author: string;
-  authorRole: 'cliente' | 'suporte';
-  content: string;
-  createdAt: string;
-  attachments?: TicketAttachment[];
-}
+// ===== Constantes e mapas de DOMÍNIO (específicos do frontend) =====
 
 export type Sector = 'comercial' | 'financeiro' | 'suporte' | 'garantia';
 
@@ -110,75 +14,60 @@ export const SECTOR_LABELS: Record<Sector, string> = {
   garantia: 'Garantia',
 };
 
-export interface Ticket {
-  id: string;
-  title: string;
-  description: string;
-  priority: TicketPriority;
-  status: TicketStatus;
-  sector: Sector;
-  assignedTo?: string;
-  customerId: string;
-  customerName: string;
-  tenantId: string;
-  messages: TicketMessage[];
-  createdAt: string;
-  updatedAt: string;
-}
+// ===== Mapas de status (enum da API -> rótulo PT-BR) =====
 
-export type FinancialStatus = 'aberto' | 'pago' | 'vencido';
+export const ORDER_STATUS_LABELS: Record<string, string> = {
+  draft: 'Rascunho',
+  submitted: 'Enviado',
+  received: 'Recebido',
+  under_review: 'Em Análise',
+  awaiting_customer: 'Aguardando Cliente',
+  approved: 'Aprovado',
+  processing: 'Em Processamento',
+  invoiced: 'Faturado',
+  shipped: 'Enviado',
+  completed: 'Concluído',
+  cancelled: 'Cancelado',
+};
 
-export interface FinancialRecord {
-  id: string;
-  description: string;
-  amount: number;
-  dueDate: string;
-  paidDate?: string;
-  status: FinancialStatus;
-  orderId?: string;
-  customerId: string;
-  customerName: string;
-  tenantId: string;
-}
+export const TICKET_STATUS_LABELS: Record<string, string> = {
+  open: 'Aberto',
+  under_review: 'Em Análise',
+  awaiting_customer: 'Aguardando Cliente',
+  awaiting_company: 'Aguardando Empresa',
+  resolved: 'Resolvido',
+  closed: 'Fechado',
+};
 
-export type TeamRole = 'admin' | 'vendedor' | 'suporte' | 'financeiro';
+export const TICKET_PRIORITY_LABELS: Record<string, string> = {
+  low: 'Baixa',
+  medium: 'Média',
+  high: 'Alta',
+  urgent: 'Urgente',
+};
 
-export interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  cpf?: string;
-  role: TeamRole;
-  tenantId: string;
-  active: boolean;
-  joinedAt: string;
-}
+export const FINANCIAL_STATUS_LABELS: Record<string, string> = {
+  open: 'Em Aberto',
+  paid: 'Pago',
+  overdue: 'Vencido',
+};
 
-export interface CartItem {
-  product: Product;
-  qty: number;
-}
+export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+  order: 'Pedido',
+  ticket: 'Ticket',
+  chat: 'Chat',
+  financial: 'Financeiro',
+  system: 'Sistema',
+};
 
-export interface ChatMessage {
-  id: string;
-  author: string;
-  authorRole: 'cliente' | 'suporte';
-  content: string;
-  createdAt: string;
-}
+export const CUSTOMER_STATUS_LABELS: Record<string, string> = {
+  active: 'Ativo',
+  inactive: 'Inativo',
+  blocked: 'Bloqueado',
+};
 
-export type ConversationStatus = 'aberta' | 'pendente' | 'encerrada';
-
-export interface ChatConversation {
-  id: string;
-  customerId: string;
-  customerName: string;
-  sector: Sector;
-  status: ConversationStatus;
-  subject: string;
-  messages: ChatMessage[];
-  tenantId: string;
-  assignedTo?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export const USER_STATUS_LABELS: Record<string, string> = {
+  active: 'Ativo',
+  inactive: 'Inativo',
+  blocked: 'Bloqueado',
+};

@@ -1,160 +1,203 @@
-import { useState } from 'react';
-import { mockOrders } from '../../data/mock';
+import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { Package } from 'lucide-react';
+import { api } from '../../lib/api';
+import type { Order, OrderPage } from '@/types/api';
+import { orderStatusClass, orderStatusLabel } from '../../lib/orderStatus';
+import { formatCurrency, formatDate } from '../../lib/format';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../components/ui/table';
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '../../components/ui/dialog';
 import { Separator } from '../../components/ui/separator';
-import { Package, ChevronDown, ChevronRight, FileText, FileSpreadsheet, Download } from 'lucide-react';
-import { formatCurrency, formatDate } from '../../lib/format';
-import { exportOrderPDF, exportOrderXLSX } from '../../lib/export';
-import type { OrderStatus } from '../../types';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 
-function statusBadge(status: OrderStatus) {
-  const map: Record<OrderStatus, { label: string; className: string }> = {
-    submitted: { label: 'Aguardando Aprovação', className: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-    approved: { label: 'Aprovado', className: 'bg-blue-100 text-blue-800 border-blue-200' },
-    shipped: { label: 'Enviado/Entregue', className: 'bg-green-100 text-green-800 border-green-200' },
-    cancelled: { label: 'Cancelado', className: 'bg-red-100 text-red-800 border-red-200' },
-  };
-  const { className } = map[status];
-  return (
-    <Badge variant="outline" className={className}>
-      {map[status].label}
-    </Badge>
-  );
-}
+const PAGE_SIZE = 20;
 
 export default function ClientOrdersPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Order | null>(null);
 
-  const clientOrders = mockOrders
-    .filter((o) => o.customerId === 'cust-1')
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.get<OrderPage>('/orders', { page, page_size: PAGE_SIZE });
+      setOrders(data.items);
+      setTotal(data.total);
+      setPages(data.pages || 1);
+    } catch {
+      toast.error('Não foi possível carregar seus pedidos.');
+    } finally {
+      setLoading(false);
+    }
+  }, [page]);
 
-  const toggleExpand = (id: string) => {
-    setExpandedId((prev) => (prev === id ? null : id));
+  useEffect(() => { load(); }, [load]);
+
+  const openDetail = async (order: Order) => {
+    setDetail(order);
+    try {
+      const full = await api.get<Order>(`/orders/${order.id}`);
+      setDetail(full);
+    } catch {
+      // mantém o item da lista como detalhe básico se o GET falhar
+    }
   };
 
+  const toggleExpand = (id: string) => setExpandedId((prev) => (prev === id ? null : id));
+
+  if (loading) {
+    return <div className="mx-auto max-w-5xl px-4 py-16 text-center text-muted-foreground">Carregando pedidos…</div>;
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 py-20 text-center">
+        <Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/30" />
+        <h3 className="text-lg font-semibold text-muted-foreground">Nenhum pedido encontrado</h3>
+        <p className="mt-1 text-sm text-muted-foreground/70">Seus pedidos aparecerão aqui.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
-      <div className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Meus Pedidos</h1>
-          <p className="text-muted-foreground mt-1">
-            Acompanhe o status dos seus pedidos
-          </p>
-        </div>
+    <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-foreground">Meus Pedidos</h1>
+        <p className="mt-1 text-muted-foreground">
+          Acompanhe o status dos seus pedidos{total > 0 ? ` (${total} no total)` : ''}.
+        </p>
       </div>
 
-      {clientOrders.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Package className="w-16 h-16 text-muted-foreground/30 mb-4" />
-          <h3 className="text-lg font-semibold text-muted-foreground">Nenhum pedido encontrado</h3>
-          <p className="text-sm text-muted-foreground/70 mt-1">Seus pedidos aparecerão aqui</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {clientOrders.map((order) => (
-            <Card key={order.id} className="overflow-hidden">
-              <CardContent className="p-0">
-                <button
-                  className="w-full p-4 text-left hover:bg-muted/30 transition-colors"
-                  onClick={() => toggleExpand(order.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <div>
-                        <p className="font-semibold text-sm">#{order.id.toUpperCase()}</p>
-                        <p className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</p>
-                      </div>
-                      {statusBadge(order.status)}
-                      <div className="hidden sm:block">
-                        <p className="text-sm text-muted-foreground">
-                          {order.items.length} ite{order.items.length !== 1 ? 'ns' : 'm'}
-                        </p>
-                      </div>
+      <div className="space-y-3">
+        {orders.map((order) => (
+          <Card key={order.id} className="overflow-hidden">
+            <CardContent className="p-0">
+              <button
+                className="w-full p-4 text-left transition-colors hover:bg-muted/30"
+                onClick={() => toggleExpand(order.id)}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div>
+                      <p className="font-semibold">Pedido #{order.number}</p>
+                      <p className="text-xs text-muted-foreground">{formatDate(order.created_at)}</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-primary">{formatCurrency(order.total)}</span>
-                      {expandedId === order.id ? (
-                        <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </div>
+                    <Badge className={orderStatusClass(order.status)}>
+                      {orderStatusLabel(order.status)}
+                    </Badge>
                   </div>
-                </button>
+                  <div className="text-right">
+                    <p className="font-bold">{formatCurrency(order.total)}</p>
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openDetail(order); }}>
+                      Ver detalhes
+                    </Button>
+                  </div>
+                </div>
+              </button>
 
-                {expandedId === order.id && (
-                  <div className="border-t px-4 py-3 bg-muted/20">
-                    {order.note && (
-                      <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
-                        <p className="text-xs font-medium text-amber-800">Observação: {order.note}</p>
-                      </div>
-                    )}
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Produto</TableHead>
-                          <TableHead className="text-xs text-center">Qtd</TableHead>
-                          <TableHead className="text-xs text-right">Unit.</TableHead>
-                          <TableHead className="text-xs text-right">Total</TableHead>
+              {expandedId === order.id && (
+                <div className="border-t px-4 py-3">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Produto</TableHead>
+                        <TableHead>Qtd</TableHead>
+                        <TableHead className="text-right">Preço</TableHead>
+                        <TableHead className="text-right">Subtotal</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {order.items.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium">{item.product_id}</TableCell>
+                          <TableCell>{item.quantity}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(item.subtotal)}</TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {order.items.map((item) => (
-                          <TableRow key={item.productId}>
-                            <TableCell className="text-sm py-2">{item.productName}</TableCell>
-                            <TableCell className="text-sm py-2 text-center">{item.qty}</TableCell>
-                            <TableCell className="text-sm py-2 text-right">{formatCurrency(item.unitPrice)}</TableCell>
-                            <TableCell className="text-sm py-2 text-right font-medium">{formatCurrency(item.unitPrice * item.qty)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    <Separator className="my-2" />
-                    <div className="flex justify-between items-center">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            <Download className="w-3.5 h-3.5 mr-1.5" />
-                            Exportar
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuItem onClick={() => exportOrderPDF(order, 'TechnoOffice Ltda')}>
-                            <FileText className="w-4 h-4 mr-2" />
-                            Baixar PDF
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => exportOrderXLSX(order)}>
-                            <FileSpreadsheet className="w-4 h-4 mr-2" />
-                            Baixar XLSX
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <span className="font-bold">Total: {formatCurrency(order.total)}</span>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {order.notes && <p className="mt-3 text-sm text-muted-foreground">Obs.: {order.notes}</p>}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {pages > 1 && (
+        <div className="mt-6 flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
+            <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
+          </div>
         </div>
       )}
+
+      {/* Detalhe com histórico de status */}
+      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) setDetail(null); }}>
+        <DialogContent className="max-w-lg">
+          {detail && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Pedido #{detail.number}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Badge className={orderStatusClass(detail.status)}>{orderStatusLabel(detail.status)}</Badge>
+                  <span className="font-bold">{formatCurrency(detail.total)}</span>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produto</TableHead>
+                      <TableHead>Qtd</TableHead>
+                      <TableHead className="text-right">Subtotal</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.items.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">{item.product_id}</TableCell>
+                        <TableCell>{item.quantity}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(item.subtotal)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {detail.status_history.length > 0 && (
+                  <>
+                    <Separator />
+                    <div>
+                      <p className="mb-2 text-sm font-medium">Histórico de status</p>
+                      <div className="space-y-2">
+                        {detail.status_history.map((h) => (
+                          <div key={h.id} className="flex items-start justify-between gap-2 text-sm">
+                            <div>
+                              <span className="font-medium">{orderStatusLabel(h.to_status)}</span>
+                              {h.note && <p className="text-xs text-muted-foreground">{h.note}</p>}
+                            </div>
+                            <span className="text-xs text-muted-foreground">{formatDate(h.created_at)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

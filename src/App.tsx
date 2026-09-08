@@ -12,7 +12,11 @@ import OrdersPage from './pages/client/OrdersPage';
 import TicketsPage from './pages/client/TicketsPage';
 import ChatPage from './pages/client/ChatPage';
 import FinancialPage from './pages/client/FinancialPage';
-import { DashboardPage, CatalogPage, ClientsPage, CompanyOrdersPage, TeamPage, CompanyTicketsPage, CompanyChatPage } from './pages/company/CompanyPages';
+import {
+  DashboardPage, CatalogPage, ClientsPage, CompanyOrdersPage, TeamPage,
+  CompanyTicketsPage, CompanyChatPage,
+} from './pages/company/CompanyPages';
+import CompanyFinancialPage from './pages/company/CompanyFinancialPage';
 import CompaniesPage from './pages/superadmin/CompaniesPage';
 
 export default function App() {
@@ -24,8 +28,8 @@ export default function App() {
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<LoginPage />} />
 
-            {/* Cliente */}
-            <Route element={<ProtectedRoute allowedRoles={['cliente']} />}>
+            {/* Cliente (customer_id !== null) */}
+            <Route element={<ProtectedRoute profiles={['cliente']} />}>
               <Route element={<ClientLayout />}>
                 <Route path="/loja" element={<StorePage />} />
                 <Route path="/carrinho" element={<CartPage />} />
@@ -36,8 +40,8 @@ export default function App() {
               </Route>
             </Route>
 
-            {/* Empresa */}
-            <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+            {/* Empresa (tenant_id !== null && customer_id === null) */}
+            <Route element={<ProtectedRoute profiles={['empresa']} />}>
               <Route element={<CompanyLayout />}>
                 <Route path="/empresa" element={<DashboardPage />} />
                 <Route path="/empresa/catalogo" element={<CatalogPage />} />
@@ -46,11 +50,12 @@ export default function App() {
                 <Route path="/empresa/equipe" element={<TeamPage />} />
                 <Route path="/empresa/tickets" element={<CompanyTicketsPage />} />
                 <Route path="/empresa/chat" element={<CompanyChatPage />} />
+                <Route path="/empresa/financeiro" element={<CompanyFinancialPage />} />
               </Route>
             </Route>
 
-            {/* Super Admin */}
-            <Route element={<ProtectedRoute allowedRoles={['superadmin']} />}>
+            {/* Super Admin (is_super_admin === true) */}
+            <Route element={<ProtectedRoute profiles={['superadmin']} />}>
               <Route element={<SuperAdminLayout />}>
                 <Route path="/superadmin" element={<CompaniesPage />} />
               </Route>
