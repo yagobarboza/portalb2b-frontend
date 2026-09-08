@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'; // ✅ useRef adicionado
 import { toast } from 'sonner';
-import { MoreVertical, Search, TicketIcon, UserCog } from 'lucide-react';
+import { Paperclip, Search, Send, TicketIcon, UserCog } from 'lucide-react'; // ✅ ArrowLeft removido
 import { useAuth } from '../../context/AuthContext';
 import { api, ApiError } from '../../lib/api';
 import {
-  assignTicket, getTicket, listTickets, sendTicketMessage, updateTicketStatus,
+  assignTicket, getAttachmentUrl, getTicket, listTickets,
+  sendTicketMessage, updateTicketStatus, uploadTicketAttachment,
 } from '../../lib/ticketsApi';
 import {
   ticketPriorityClass, ticketPriorityLabel, ticketStatusClass, ticketStatusLabel,
@@ -15,7 +16,7 @@ import type {
 } from '@/types/api';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
@@ -25,9 +26,6 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../components/ui/select';
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '../../components/ui/table';
 
 const PAGE_SIZE = 20;
 
@@ -43,7 +41,6 @@ export default function CompanyTicketsPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | TicketStatus>('all');
   const [filterPriority, setFilterPriority] = useState<'all' | TicketPriority>('all');
   const [assignees, setAssignees] = useState<UserPage['items']>([]);
-  // Mapas de nomes (cliente = empresa compradora; atendentes).
   const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [message, setMessage] = useState('');
@@ -53,38 +50,30 @@ export default function CompanyTicketsPage() {
   const [newAssignee, setNewAssignee] = useState<string>('');
   const [savingAction, setSavingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
 
-  // Debounce da busca.
   useEffect(() => {
     const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
     return () => window.clearTimeout(t);
   }, [search]);
 
-  // Carrega atendentes (para atribuição) + clientes (para nomes).
   useEffect(() => {
     let active = true;
     (async () => {
       try {
         const users = await api.get<UserPage>('/users', { page: 1, page_size: 100 });
-        if (active) {
-          setAssignees(users.items.filter((u: UserPage['items'][number]) => !u.roles?.includes('cliente')));
-        }
-      } catch {
-        // Falha aqui não derruba a página.
-      }
+        if (active) setAssignees(users.items);
+      } catch { /* não derruba */ }
       try {
         const cust = await api.get<CustomerPage>('/customers', { page: 1, page_size: 100 });
         const cm: Record<string, string> = {};
         for (const c of cust.items) cm[c.id] = c.name;
         if (active) setCustomerMap(cm);
-      } catch {
-        // Falha aqui não derruba a página.
-      }
+      } catch { /* não derruba */ }
     })();
     return () => { active = false; };
   }, []);
 
-  // Mapa de nomes dos atendentes (do state assignees).
   const assigneeNameMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const u of assignees) map[u.id] = u.full_name;
@@ -102,7 +91,6 @@ export default function CompanyTicketsPage() {
       });
       setTickets(data.items);
       setTotal(data.total);
-      // TicketPage não tem "pages" — calcula a partir do total.
       setPages(Math.max(1, Math.ceil(data.total / PAGE_SIZE)));
     } catch {
       toast.error('Não foi possível carregar os chamados.');
@@ -120,8 +108,9 @@ export default function CompanyTicketsPage() {
       setActionError(null);
       setNewStatus('');
       setNewAssignee('');
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Erro ao abrir o chamado.');
+      setMessage('');
+    } catch {
+      toast.error('Erro ao abrir o chamado.');
     }
   };
 
@@ -132,13 +121,31 @@ export default function CompanyTicketsPage() {
     try {
       await sendTicketMessage(detail.id, message.trim(), isInternal);
       setMessage('');
-      const full = await getTicket(detail.id);
-      setDetail(full);
+      setDetail(await getTicket(detail.id));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Erro ao enviar mensagem.');
     } finally {
       setSending(false);
     }
+  };
+
+  const handleAttach = async (file: File) => {
+    if (!detail || sending) return;
+    setSending(true);
+    try {
+      await uploadTicketAttachment(detail.id, file);
+      setDetail(await getTicket(detail.id));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao enviar anexo.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    if (file) handleAttach(file);
   };
 
   const saveStatus = async () => {
@@ -189,6 +196,14 @@ export default function CompanyTicketsPage() {
 
   return (
     <div className="space-y-4">
+      {/* Cabeçalho com total */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Tickets</h1>
+        <p className="text-sm text-muted-foreground">
+          Atendimento aos clientes — {total} chamado(s) no total.
+        </p>
+      </div>
+
       {/* Filtros */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -204,13 +219,10 @@ export default function CompanyTicketsPage() {
           <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v as 'all' | TicketStatus); setPage(1); }}>
             <SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos os status</SelectItem>
-              <SelectItem value="open">Aberto</SelectItem>
-              <SelectItem value="under_review">Em Análise</SelectItem>
-              <SelectItem value="awaiting_customer">Aguardando Cliente</SelectItem>
-              <SelectItem value="awaiting_company">Aguardando Empresa</SelectItem>
-              <SelectItem value="resolved">Resolvido</SelectItem>
-              <SelectItem value="closed">Fechado</SelectItem>
+              <SelectItem value="all">Todos</SelectItem>
+              {(['open', 'under_review', 'awaiting_customer', 'awaiting_company', 'resolved', 'closed'] as TicketStatus[]).map((s) => (
+                <SelectItem key={s} value={s}>{ticketStatusLabel(s)}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -218,22 +230,16 @@ export default function CompanyTicketsPage() {
           <Select value={filterPriority} onValueChange={(v) => { setFilterPriority(v as 'all' | TicketPriority); setPage(1); }}>
             <SelectTrigger className="w-full"><SelectValue placeholder="Prioridade" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todas as prioridades</SelectItem>
-              <SelectItem value="low">Baixa</SelectItem>
-              <SelectItem value="medium">Média</SelectItem>
-              <SelectItem value="high">Alta</SelectItem>
-              <SelectItem value="urgent">Urgente</SelectItem>
+              <SelectItem value="all">Todas</SelectItem>
+              {(['low', 'medium', 'high', 'urgent'] as TicketPriority[]).map((p) => (
+                <SelectItem key={p} value={p}>{ticketPriorityLabel(p)}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">
-            Chamados <span className="font-normal text-muted-foreground">({total})</span>
-          </CardTitle>
-        </CardHeader>
         <CardContent className="p-0">
           {loading ? (
             <p className="py-10 text-center text-muted-foreground">Carregando…</p>
@@ -243,109 +249,95 @@ export default function CompanyTicketsPage() {
               <h3 className="text-lg font-semibold text-muted-foreground">Nenhum chamado encontrado</h3>
             </div>
           ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Chamado</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead>Prioridade</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Atualizado</TableHead>
-                    <TableHead className="text-right">Ação</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((t) => (
-                    <TableRow key={t.id} className="cursor-pointer" onClick={() => openTicket(t)}>
-                      <TableCell className="font-medium">
-                        #{t.number}
-                        <span className="block max-w-[260px] truncate text-xs text-muted-foreground">{t.title}</span>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{customerName(t.customer_id)}</TableCell>
-                      <TableCell>
-                        <Badge className={ticketPriorityClass(t.priority)}>{ticketPriorityLabel(t.priority)}</Badge>
-                      </TableCell>
-                      <TableCell>
+            <ul className="divide-y">
+              {filtered.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/30"
+                    onClick={() => openTicket(t)}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">#{t.number}</span>
+                          <span className="truncate font-medium">{t.title}</span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {customerName(t.customer_id)} · {formatDateTime(t.updated_at)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <Badge className={ticketStatusClass(t.status)}>{ticketStatusLabel(t.status)}</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{formatDateTime(t.updated_at)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label="Abrir chamado"
-                          onClick={(e) => { e.stopPropagation(); openTicket(t); }}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {pages > 1 && (
-                <div className="flex items-center justify-between border-t px-4 py-3">
-                  <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
-                    <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
-                  </div>
-                </div>
-              )}
-            </>
+                        <Badge className={ticketPriorityClass(t.priority)}>{ticketPriorityLabel(t.priority)}</Badge>
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </CardContent>
       </Card>
 
-      {/* Detalhe do chamado */}
+      {pages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
+            <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Detalhe — visual e-mail */}
       <Dialog open={!!detail} onOpenChange={(o) => { if (!o) { setDetail(null); setActionError(null); } }}>
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
           {detail && (
             <>
               <DialogHeader>
-                <DialogTitle>Chamado #{detail.number} · {detail.title}</DialogTitle>
+                <DialogTitle className="text-base">
+                  #{detail.number} · {customerName(detail.customer_id)} — {detail.title}
+                </DialogTitle>
               </DialogHeader>
-
-              <div className="flex flex-wrap gap-2">
-                <Badge className={ticketPriorityClass(detail.priority)}>{ticketPriorityLabel(detail.priority)}</Badge>
+              <div className="flex flex-wrap gap-2 text-xs">
                 <Badge className={ticketStatusClass(detail.status)}>{ticketStatusLabel(detail.status)}</Badge>
+                <Badge className={ticketPriorityClass(detail.priority)}>{ticketPriorityLabel(detail.priority)}</Badge>
                 {detail.category && <Badge variant="secondary">{detail.category}</Badge>}
                 {detail.assignee_id && (
                   <Badge variant="outline">Resp.: {assigneeNameMap[detail.assignee_id] ?? detail.assignee_id.slice(0, 8)}</Badge>
                 )}
               </div>
-
-              <p className="text-sm text-muted-foreground">
-                Aberto por:{' '}
-                <strong>{detail.customer_id ? customerName(detail.customer_id) : 'Equipe interna'}</strong>
-                {' '}· {formatDateTime(detail.created_at)}
+              <p className="text-xs text-muted-foreground">
+                Aberto por <strong>{customerName(detail.customer_id)}</strong> · {formatDateTime(detail.created_at)}
               </p>
-              {detail.description && <p className="text-sm">{detail.description}</p>}
+              {detail.description && (
+                <p className="rounded-md border bg-muted/20 p-3 text-sm whitespace-pre-wrap">{detail.description}</p>
+              )}
 
-              {/* Mensagens */}
+              {/* Thread */}
               <div className="space-y-3">
                 {detail.messages.map((msg) => {
                   let author = 'Equipe';
-                  if (msg.author_customer_id) {
-                    author = customerName(msg.author_customer_id);
-                  } else if (msg.author_user_id) {
-                    author = msg.author_user_id === user?.id
-                      ? 'Você'
-                      : assigneeNameMap[msg.author_user_id] ?? 'Equipe';
-                  }
+                  if (msg.author_customer_id) author = customerName(msg.author_customer_id);
+                  else if (msg.author_user_id) author = msg.author_user_id === user?.id ? 'Você' : assigneeNameMap[msg.author_user_id] ?? 'Equipe';
                   return (
-                    <div
-                      key={msg.id}
-                      className={`rounded-md border p-3 ${msg.is_internal ? 'bg-amber-50' : 'bg-muted/30'}`}
-                    >
+                    <div key={msg.id} className={`rounded-md border p-3 ${msg.is_internal ? 'bg-amber-50 dark:bg-amber-950/30' : 'bg-muted/30'}`}>
                       <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                        <span className="font-medium">
-                          {msg.is_internal ? 'Nota interna' : author}
-                        </span>
+                        <span className="font-medium">{msg.is_internal ? '🔒 Nota interna' : author}</span>
                         <span>{formatDateTime(msg.created_at)}</span>
                       </div>
                       <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                      {msg.attachment_file_id && (
+                        <a
+                          href={getAttachmentUrl(msg.attachment_file_id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+                        >
+                          <Paperclip className="h-3 w-3" /> Baixar anexo
+                        </a>
+                      )}
                     </div>
                   );
                 })}
@@ -367,13 +359,25 @@ export default function CompanyTicketsPage() {
                 <Textarea
                   rows={2}
                   maxLength={4000}
-                  placeholder={isInternal ? 'Escreva uma nota interna…' : 'Escreva uma resposta ao cliente…'}
+                  placeholder={isInternal ? 'Escreva uma nota interna…' : 'Escreva uma resposta…'}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                 />
-                <Button type="submit" disabled={sending || message.trim().length === 0}>
-                  {sending ? 'Enviando…' : 'Enviar'}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={attachRef}
+                    type="file"
+                    className="hidden"
+                    onChange={pickFile}
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                  />
+                  <Button type="button" variant="outline" size="icon" aria-label="Anexar" disabled={sending} onClick={() => attachRef.current?.click()}>
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                  <Button type="submit" disabled={sending || message.trim().length === 0} className="ml-auto">
+                    <Send className="mr-2 h-4 w-4" />{sending ? 'Enviando…' : 'Responder'}
+                  </Button>
+                </div>
               </form>
 
               {/* Gestão */}
@@ -384,10 +388,9 @@ export default function CompanyTicketsPage() {
                     <SelectTrigger id="t-status" className="w-full"><SelectValue placeholder="Novo status" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Selecione…</SelectItem>
-                      <SelectItem value="under_review">Em Análise</SelectItem>
-                      <SelectItem value="awaiting_customer">Aguardando Cliente</SelectItem>
-                      <SelectItem value="resolved">Resolvido</SelectItem>
-                      <SelectItem value="closed">Fechado</SelectItem>
+                      {(['under_review', 'awaiting_customer', 'resolved', 'closed'] as TicketStatus[]).map((s) => (
+                        <SelectItem key={s} value={s}>{ticketStatusLabel(s)}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <Button size="sm" variant="outline" onClick={saveStatus} disabled={!newStatus || savingAction}>

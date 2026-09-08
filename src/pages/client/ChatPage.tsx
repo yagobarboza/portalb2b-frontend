@@ -1,29 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, MessageCircle, MessageSquare, Plus, Send } from 'lucide-react';
+import { ArrowLeft, MessageCircle, MessageSquare, Paperclip, Plus, Send } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { toChatMessage, useChatWebSocket } from '../../lib/websocket';
 import type { ChatMessage, ChatMessagePage, ChatRoom } from '@/types/api';
+import { getAttachmentUrl } from '../../lib/ticketsApi';
 import { formatDate, formatDateTime } from '../../lib/format';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
-import { ScrollArea } from '../../components/ui/scroll-area';
 
 const PAGE_SIZE = 50;
 
-// ✅ 5b: slugs da API em inglês + compatibilidade com os antigos.
 const SECTOR_LABELS: Record<string, string> = {
   sales: 'Vendas',
   commercial: 'Comercial',
   financial: 'Financeiro',
   support: 'Suporte',
   service: 'Serviços',
-  comercial: 'Comercial',
-  financeiro: 'Financeiro',
-  suporte: 'Suporte',
-  garantia: 'Garantia',
 };
 
 const ROOM_STATUS_LABEL: Record<string, string> = {
@@ -40,8 +35,8 @@ export default function ClientChatPage() {
   const [opening, setOpening] = useState(false);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
 
-  // Recepção em tempo real via WebSocket.
   const { status: wsStatus } = useChatWebSocket({
     roomId: selected?.id ?? null,
     enabled: !!selected,
@@ -69,7 +64,6 @@ export default function ClientChatPage() {
 
   useEffect(() => { loadRooms(); }, [loadRooms]);
 
-  // Cria/obtém a sala automática do cliente (contrato: sem body, sala única).
   const openRoom = async () => {
     setOpening(true);
     try {
@@ -101,11 +95,9 @@ export default function ClientChatPage() {
     api.post(`/chat/rooms/${room.id}/read`).catch(() => {});
   };
 
-  // Auto-scroll para a última mensagem.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    const el = scrollRef.current;
+    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [messages, selected?.id]);
 
   const handleSend = async () => {
@@ -123,8 +115,27 @@ export default function ClientChatPage() {
     }
   };
 
-  // ✅ 5b: lado cliente — "Você" para as próprias mensagens e "Atendimento"
-  // para as da empresa (o cliente não tem acesso à lista de usuários).
+  const handleAttach = async (file: File) => {
+    if (!selected || sending) return;
+    setSending(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await api.upload<ChatMessage>(`/chat/rooms/${selected.id}/attachments`, formData);
+      await loadHistory(selected.id);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao enviar anexo.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    if (file) handleAttach(file);
+  };
+
   const senderName = (m: ChatMessage) => {
     if (m.sender_type === 'system') return 'Sistema';
     if (m.sender_user_id) return 'Atendimento';
@@ -135,7 +146,6 @@ export default function ClientChatPage() {
   const statusLabel = (s: string | null) => ROOM_STATUS_LABEL[s ?? 'open'] ?? (s ?? 'open');
   const isClosed = selected?.status === 'closed';
 
-  // ── Chat aberto
   if (selected) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8">
@@ -163,26 +173,43 @@ export default function ClientChatPage() {
             Conversa com o setor de {sectorLabel(selected.sector)} · início {formatDate(selected.created_at)}
           </div>
 
-          <ScrollArea className="h-[480px] px-4 py-4">
-            <div ref={scrollRef} className="space-y-3">
-              {messages.map((m) => {
-                const own = !m.sender_user_id;
-                return (
-                  <div key={m.id} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] rounded-lg border px-3 py-2 ${own ? 'bg-primary/10' : 'bg-muted/30'}`}>
-                      {/* ✅ 5b: nome do remetente ("Você" / "Atendimento") */}
-                      <p className="mb-0.5 text-xs font-medium text-muted-foreground">{senderName(m)}</p>
-                      <p className="text-sm whitespace-pre-wrap">{m.content}</p>
-                      <p className="mt-1 text-right text-[10px] text-muted-foreground">{formatDateTime(m.created_at)}</p>
-                    </div>
+          <div ref={scrollRef} className="max-h-[460px] min-h-[300px] space-y-3 overflow-y-auto px-4 py-4">
+            {messages.map((m) => {
+              const own = !m.sender_user_id;
+              return (
+                <div key={m.id} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] rounded-lg border px-3 py-2 ${own ? 'bg-primary/10' : 'bg-muted/30'}`}>
+                    <p className="mb-0.5 text-xs font-medium text-muted-foreground">{senderName(m)}</p>
+                    <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                    {m.attachment_file_id && (
+                      <a
+                        href={getAttachmentUrl(m.attachment_file_id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+                      >
+                        <Paperclip className="h-3 w-3" /> Baixar anexo
+                      </a>
+                    )}
+                    <p className="mt-1 text-right text-[10px] text-muted-foreground">{formatDateTime(m.created_at)}</p>
                   </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
+                </div>
+              );
+            })}
+          </div>
 
           {!isClosed ? (
             <div className="flex gap-2 border-t p-3">
+              <input
+                ref={attachRef}
+                type="file"
+                className="hidden"
+                onChange={pickFile}
+                accept="image/jpeg,image/png,application/pdf"
+              />
+              <Button type="button" variant="outline" size="icon" aria-label="Anexar" disabled={sending} onClick={() => attachRef.current?.click()}>
+                <Paperclip className="h-4 w-4" />
+              </Button>
               <Input
                 placeholder="Digite sua mensagem…"
                 value={newMsg}
@@ -196,14 +223,15 @@ export default function ClientChatPage() {
               </Button>
             </div>
           ) : (
-            <p className="border-t p-3 text-center text-sm text-muted-foreground">Conversa encerrada.</p>
+            <p className="border-t p-3 text-center text-sm text-muted-foreground">
+              📌 Conversa encerrada pelo atendimento.
+            </p>
           )}
         </Card>
       </div>
     );
   }
 
-  // ── Lista de conversas
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
       <div className="mb-8 flex items-center justify-between">

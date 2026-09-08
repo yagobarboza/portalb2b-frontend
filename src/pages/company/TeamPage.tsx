@@ -94,9 +94,7 @@ export default function TeamPage() {
     setLoading(true);
     try {
       const data = await api.get<UserPage>('/users', { page, page_size: PAGE_SIZE });
-      // ✅ BUG 3: GET /users retorna TODOS os usuários do tenant, inclusive
-      // clientes (role 'cliente'). Equipe = apenas quem NÃO é cliente.
-      // Os clientes continuam visíveis apenas na página "Clientes".
+      // O backend já exclui clientes (customer_id != null). Reforço no front:
       const team = data.items.filter((u) => !u.roles?.includes('cliente'));
       setUsers(team);
       setTotal(team.length);
@@ -121,9 +119,7 @@ export default function TeamPage() {
   useEffect(() => { loadRoles(); }, [loadRoles]);
   useEffect(() => { loadInvites(); }, [loadInvites]);
 
-  // ✅ BUG 3: perfis válidos p/ convidar membro da equipe — TODOS os perfis
-  // do tenant (admin, vendedor, financeiro, suporte + customizados),
-  // excluindo 'cliente' (comprador) e 'super_admin' (global).
+  // Perfis válidos para convidar membro da equipe — todos, exceto cliente/super_admin.
   const selectableRoles = roles.filter(
     (r) => r.slug !== 'cliente' && r.slug !== 'super_admin'
   );
@@ -280,7 +276,6 @@ export default function TeamPage() {
                 <DialogTrigger asChild>
                   <Button variant="outline"><Shield className="mr-2 h-4 w-4" />Perfis de acesso</Button>
                 </DialogTrigger>
-                {/* ✅ Scroll: permite rolar para baixo no dialog */}
                 <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>Perfis de acesso (Roles)</DialogTitle></DialogHeader>
                   <div className="max-h-72 space-y-2 overflow-auto">

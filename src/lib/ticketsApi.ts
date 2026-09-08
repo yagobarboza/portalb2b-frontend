@@ -1,10 +1,10 @@
 /**
  * Camada de API de Tickets (Bloco 8).
- *
  * SEGURANÇA (espelha o backend):
  * - Cliente NUNCA envia is_internal=true (backend rejeita com 403).
  * - Mensagens internas só são buscadas para perfis de empresa (include_internal).
  * - Erros sanitizados via ApiError; nada de detalhes internos na UI.
+ * - Envio de anexos via multipart/form-data (POST /tickets/{id}/attachments).
  */
 import { api } from './api';
 import type {
@@ -42,6 +42,19 @@ export function sendTicketMessage(ticketId: string, content: string, isInternal 
     content,
     is_internal: isInternal,
   });
+}
+
+/** Envia anexo do ticket (multipart) — cria uma mensagem com o arquivo. */
+export function uploadTicketAttachment(ticketId: string, file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.upload<TicketMessage>(`/tickets/${ticketId}/attachments`, formData);
+}
+
+/** URL de download do anexo (GET /files/{id}/download → {url, expires_in}). */
+export function getAttachmentUrl(fileId: string): string {
+  // URL relativa via proxy Vite; em produção usa a base configurada pelo api.ts.
+  return `/api/v1/files/${fileId}/download`;
 }
 
 /** Atualiza status (apenas empresa). */

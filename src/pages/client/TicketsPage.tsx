@@ -1,257 +1,357 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { MessageCircle, Plus, TicketIcon } from 'lucide-react';
 import {
-  createTicket, getTicket, listTickets, sendTicketMessage,
+  ArrowLeft, Paperclip, Plus, Send, Ticket as TicketIcon,
+} from 'lucide-react';
+import {
+  createTicket, getTicket, listTickets, sendTicketMessage, uploadTicketAttachment,
+  getAttachmentUrl,
 } from '../../lib/ticketsApi';
-import {
-  ticketPriorityClass, ticketPriorityLabel, ticketStatusClass, ticketStatusLabel,
-} from '../../lib/ticketStatus';
-import { formatDate, formatDateTime } from '../../lib/format';
-import type { Ticket, TicketDetail, TicketPriority } from '@/types/api';
+import { ticketPriorityLabel, ticketStatusLabel } from '../../lib/ticketStatus';
+import { formatDateTime, formatDate } from '../../lib/format';
+import type {
+  Ticket, TicketDetail, TicketPriority, TicketStatus,
+} from '@/types/api';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '../../components/ui/dialog';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../components/ui/select';
 
-const PAGE_SIZE = 20;
+const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'urgent'];
+const CATEGORIES = ['Suporte técnico', 'Comercial', 'Financeiro', 'Cadastro', 'Outro'];
+
+/** Ticket fechado/resolvido → cliente não pode mais enviar mensagens/anexos. */
+const isClosedForClient = (status: TicketStatus) =>
+  status === 'resolved' || status === 'closed';
+
+function AttachPreview({ label, href }: { label: string; href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+    >
+      <Paperclip className="h-3 w-3" />
+      {label}
+    </a>
+  );
+}
 
 export default function ClientTicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
-
   const [selected, setSelected] = useState<TicketDetail | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [newMsg, setNewMsg] = useState('');
   const [sending, setSending] = useState(false);
-
-  // Novo chamado
-  const [form, setForm] = useState({ title: '', description: '', category: '', priority: 'medium' as TicketPriority });
-  const [formError, setFormError] = useState<string | null>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [form, setForm] = useState<{
+    title: string; description: string; category: string; priority: TicketPriority;
+  }>({ title: '', description: '', category: CATEGORIES[0], priority: 'medium' });
 
   const load = useCallback(async () => {
-  setLoading(true);
-  try {
-    const data = await listTickets({ page, page_size: PAGE_SIZE });
-    setTickets(data.items);
-    setPages(Math.ceil(data.total / data.page_size) || 1);
-  } catch {
-    toast.error('Não foi possível carregar seus chamados.');
-  } finally {
-    setLoading(false);
-  }
-}, [page]);
+    setLoading(true);
+    try {
+      const data = await listTickets({ page, page_size: 20 });
+      setTickets(data.items);
+      setTotal(data.total);
+      setPages(Math.max(1, Math.ceil(data.total / 20)));
+    } catch {
+      toast.error('Não foi possível carregar seus tickets.');
+    } finally {
+      setLoading(false);
+    }
+  }, [page]);
 
   useEffect(() => { load(); }, [load]);
 
   const openTicket = async (t: Ticket) => {
     try {
-      const detail = await getTicket(t.id);
-      setSelected(detail);
+      setSelected(await getTicket(t.id));
+      setNewMsg('');
+      setPendingFile(null);
     } catch {
-      // Anti-vazamento: acesso negado retorna 404 genérico no backend.
-      toast.error('Não foi possível abrir o chamado.');
+      toast.error('Erro ao abrir o ticket.');
     }
   };
 
-  const submitNew = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError(null);
-    if (form.title.trim().length < 3) {
-      setFormError('Informe um título (mín. 3 caracteres).');
+    if (!form.title.trim() || !form.description.trim()) {
+      toast.error('Preencha título e descrição.');
+      return;
+    }
+    try {
+      const created = await createTicket({
+        title: form.title.trim(),
+        description: form.description.trim(),
+        category: form.category || null,
+        priority: form.priority,
+      });
+      toast.success('Ticket criado com sucesso!');
+      setShowNew(false);
+      setForm({ title: '', description: '', category: CATEGORIES[0], priority: 'medium' });
+      setPage(1);
+      load();
+      openTicket(created);
+    } catch {
+      toast.error('Erro ao criar o ticket.');
+    }
+  };
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected || !newMsg.trim() || sending) return;
+    if (isClosedForClient(selected.status)) {
+      toast.error('Este ticket foi encerrado.');
       return;
     }
     setSending(true);
     try {
-      await createTicket({
-        title: form.title.trim(),
-        description: form.description.trim() || null,
-        category: form.category.trim() || null,
-        priority: form.priority,
-      });
-      toast.success('Chamado aberto com sucesso!');
-      setShowNew(false);
-      setForm({ title: '', description: '', category: '', priority: 'medium' });
-      load();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Erro ao abrir chamado.');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const submitMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selected || sending) return;
-    if (newMsg.trim().length === 0) return;
-    setSending(true);
-    try {
-      // Cliente: SEMPRE mensagem pública. O parâmetro is_internal nem existe
-      // neste fluxo — o backend responde 403 se um cliente tentar nota interna.
       await sendTicketMessage(selected.id, newMsg.trim());
       setNewMsg('');
       setSelected(await getTicket(selected.id));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao enviar mensagem.');
+    } catch {
+      toast.error('Erro ao enviar mensagem.');
     } finally {
       setSending(false);
     }
   };
 
+  const handleAttach = async (file: File) => {
+    if (!selected || sending) return;
+    if (isClosedForClient(selected.status)) {
+      toast.error('Este ticket foi encerrado.');
+      return;
+    }
+    setSending(true);
+    try {
+      await uploadTicketAttachment(selected.id, file);
+      setPendingFile(null);
+      setSelected(await getTicket(selected.id));
+    } catch {
+      toast.error('Erro ao enviar anexo.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    if (file) handleAttach(file);
+  };
+
+  const closed = selected ? isClosedForClient(selected.status) : false;
+
+  // ── Detalhe (cara de e-mail/thread) ──
+  if (selected) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-8">
+        <div className="mb-4 flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Voltar">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-xl font-bold">{selected.title}</h1>
+            <p className="text-xs text-muted-foreground">
+              #{selected.number} · {formatDateTime(selected.created_at)}
+            </p>
+          </div>
+          <Badge>{ticketStatusLabel(selected.status)}</Badge>
+        </div>
+
+        <Card className="overflow-hidden">
+          <div className="border-b bg-muted/30 px-4 py-3 text-sm">
+            <p>
+              <span className="text-muted-foreground">Status: </span>
+              <strong>{ticketStatusLabel(selected.status)}</strong>
+            </p>
+            <p>
+              <span className="text-muted-foreground">Prioridade: </span>
+              <strong>{ticketPriorityLabel(selected.priority)}</strong>
+            </p>
+            {selected.category && (
+              <p>
+                <span className="text-muted-foreground">Categoria: </span>
+                <strong>{selected.category}</strong>
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-4 px-4 py-4">
+            {selected.messages.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Nenhuma mensagem ainda.
+              </p>
+            )}
+            {selected.messages.map((m) => {
+              const mine = !m.author_user_id;
+              return (
+                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] rounded-lg border px-3 py-2 ${mine ? 'bg-primary/10' : 'bg-muted/30'}`}>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
+                      {mine ? 'Você' : 'Suporte'} · {formatDateTime(m.created_at)}
+                    </p>
+                    <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                    {m.attachment_file_id && (
+                      <AttachPreview label="Baixar anexo" href={getAttachmentUrl(m.attachment_file_id)} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {closed ? (
+            <p className="border-t bg-muted/20 px-4 py-4 text-center text-sm text-muted-foreground">
+              📌 Este ticket foi encerrado. Não é possível enviar novas mensagens.
+            </p>
+          ) : (
+            <form onSubmit={handleSend} className="space-y-2 border-t p-4">
+              {pendingFile && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Paperclip className="h-3 w-3" /> {pendingFile.name}
+                </p>
+              )}
+              <Textarea
+                rows={2}
+                maxLength={4000}
+                placeholder="Escreva sua resposta…"
+                value={newMsg}
+                onChange={(e) => setNewMsg(e.target.value)}
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  ref={attachRef}
+                  type="file"
+                  className="hidden"
+                  onChange={pickFile}
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                />
+                <Button type="button" variant="outline" size="icon" aria-label="Anexar arquivo" disabled={sending} onClick={() => attachRef.current?.click()}>
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+                <Button type="submit" disabled={!newMsg.trim() || sending} className="ml-auto">
+                  <Send className="mr-2 h-4 w-4" />{sending ? 'Enviando…' : 'Responder'}
+                </Button>
+              </div>
+            </form>
+          )}
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Lista ──
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-8 flex items-start justify-between gap-4">
+    <div className="mx-auto max-w-4xl px-4 py-8">
+      <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Meus Chamados</h1>
-          <p className="mt-1 text-muted-foreground">Acompanhe e abra chamados de suporte.</p>
+          <h1 className="text-3xl font-bold">Tickets de Suporte</h1>
+          <p className="mt-1 text-muted-foreground">
+            Acompanhe e abra solicitações de suporte ({total} no total).
+          </p>
         </div>
         <Button onClick={() => setShowNew(true)}>
-          <Plus className="mr-2 h-4 w-4" />Abrir chamado
+          <Plus className="mr-2 h-4 w-4" />Novo ticket
         </Button>
       </div>
 
       {loading ? (
         <p className="py-16 text-center text-muted-foreground">Carregando…</p>
       ) : tickets.length === 0 ? (
-        <div className="py-16 text-center">
-          <TicketIcon className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
-          <h3 className="text-lg font-semibold text-muted-foreground">Nenhum chamado encontrado</h3>
-          <p className="mt-1 text-sm text-muted-foreground/70">Seus chamados aparecerão aqui.</p>
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <TicketIcon className="mb-4 h-16 w-16 text-muted-foreground/30" />
+          <h3 className="text-lg font-semibold text-muted-foreground">Nenhum ticket</h3>
+          <p className="mt-1 text-sm text-muted-foreground/70">
+            Crie um ticket para obter suporte.
+          </p>
         </div>
       ) : (
-        <>
-          <div className="space-y-3">
-            {tickets.map((t) => (
-              <Card key={t.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openTicket(t)}>
-                <CardContent className="flex items-center justify-between gap-3 p-4">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">#{t.number} · {t.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(t.created_at)}</p>
+        <div className="space-y-3">
+          {tickets.map((t) => (
+            <Card key={t.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openTicket(t)}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">#{t.number}</span>
+                      <h3 className="truncate font-semibold">{t.title}</h3>
+                    </div>
+                    <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{t.description}</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Badge>{ticketStatusLabel(t.status)}</Badge>
+                      <Badge variant="outline">{ticketPriorityLabel(t.priority)}</Badge>
+                      <span className="ml-auto text-xs text-muted-foreground">{formatDate(t.updated_at)}</span>
+                    </div>
                   </div>
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <Badge className={ticketPriorityClass(t.priority)}>{ticketPriorityLabel(t.priority)}</Badge>
-                    <Badge className={ticketStatusClass(t.status)}>{ticketStatusLabel(t.status)}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {pages > 1 && (
-            <div className="mt-6 flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
-                <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
-              </div>
-            </div>
-          )}
-        </>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
-      {/* Novo chamado */}
-      <Dialog open={showNew} onOpenChange={(o) => { setShowNew(o); if (!o) setFormError(null); }}>
+      {pages > 1 && (
+        <div className="mt-6 flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
+            <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={showNew} onOpenChange={(o) => { setShowNew(o); if (!o) setForm({ title: '', description: '', category: CATEGORIES[0], priority: 'medium' }); }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Abrir chamado</DialogTitle></DialogHeader>
-          <form onSubmit={submitNew} className="space-y-4" noValidate>
+          <DialogHeader><DialogTitle>Novo ticket</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreate} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="t-title">Título *</Label>
-              <Input id="t-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+              <Input id="t-title" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder="Descreva o assunto em uma frase" required />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="t-category">Categoria</Label>
-                <Input id="t-category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Ex.: Faturamento" />
+                <Label htmlFor="t-cat">Categoria</Label>
+                <Select value={form.category} onValueChange={(v) => setForm((p) => ({ ...p, category: v }))}>
+                  <SelectTrigger id="t-cat" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
-                <Label>Prioridade</Label>
-                <Select value={form.priority} onValueChange={(v) => setForm({ ...form, priority: v as TicketPriority })}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <Label htmlFor="t-prio">Prioridade</Label>
+                <Select value={form.priority} onValueChange={(v) => setForm((p) => ({ ...p, priority: v as TicketPriority }))}>
+                  <SelectTrigger id="t-prio" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="low">Baixa</SelectItem>
-                    <SelectItem value="medium">Média</SelectItem>
-                    <SelectItem value="high">Alta</SelectItem>
-                    <SelectItem value="urgent">Urgente</SelectItem>
+                    {PRIORITIES.map((pr) => <SelectItem key={pr} value={pr}>{ticketPriorityLabel(pr)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="t-description">Descrição</Label>
-              <Textarea id="t-description" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              <Label htmlFor="t-desc">Descrição *</Label>
+              <Textarea id="t-desc" rows={4} maxLength={10000} value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} placeholder="Detalhe o que está acontecendo…" required />
             </div>
-            {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
             <DialogFooter>
-              <Button type="submit" disabled={sending}>{sending ? 'Abrindo…' : 'Abrir chamado'}</Button>
+              <Button type="submit">Criar ticket</Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Detalhe */}
-      <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>
-        <DialogContent className="max-w-2xl">
-          {selected && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Chamado #{selected.number} · {selected.title}</DialogTitle>
-              </DialogHeader>
-
-              <div className="flex flex-wrap gap-2">
-                <Badge className={ticketPriorityClass(selected.priority)}>{ticketPriorityLabel(selected.priority)}</Badge>
-                <Badge className={ticketStatusClass(selected.status)}>{ticketStatusLabel(selected.status)}</Badge>
-                {selected.category && <Badge variant="secondary">{selected.category}</Badge>}
-              </div>
-
-              {selected.description && (
-                <p className="mt-3 text-sm text-muted-foreground">{selected.description}</p>
-              )}
-
-              {/* Thread — o backend JÁ filtra is_internal para o cliente */}
-              <div className="mt-4 max-h-80 space-y-2 overflow-auto rounded-md border p-3">
-                {selected.messages.length === 0 && (
-                  <p className="text-center text-sm text-muted-foreground">Nenhuma mensagem ainda.</p>
-                )}
-                {selected.messages.map((msg) => (
-                  <div key={msg.id} className="rounded-md bg-muted/40 p-3">
-                    <p className="text-xs text-muted-foreground">
-                      {msg.author_customer_id ? 'Você' : 'Equipe de suporte'}
-                      {' · '}
-                      {formatDateTime(msg.created_at)}
-                    </p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm">{msg.content}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Responder — o cliente só envia mensagens públicas.
-                  O parâmetro is_internal nem existe neste fluxo (backend 403 se tentado). */}
-              <form onSubmit={submitMessage} className="mt-4 flex gap-2">
-                <Textarea
-                  className="min-h-[40px] flex-1"
-                  rows={1}
-                  placeholder="Escreva uma mensagem…"
-                  value={newMsg}
-                  onChange={(e) => setNewMsg(e.target.value)}
-                  maxLength={4000}
-                />
-                <Button type="submit" disabled={sending || newMsg.trim().length === 0}>
-                  <MessageCircle className="mr-2 h-4 w-4" />
-                  {sending ? 'Enviando…' : 'Enviar'}
-                </Button>
-              </form>
-            </>
-          )}
         </DialogContent>
       </Dialog>
     </div>

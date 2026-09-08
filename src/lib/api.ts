@@ -143,10 +143,17 @@ export const api = {
   delete: <T>(path: string, params?: Record<string, unknown>) =>
     request<T>('DELETE', path, { params }),
 
-  /** Upload multipart/form-data (ex.: POST /files/upload/{owner_type}?owner_id={id}). */
-  upload: <T>(path: string, file: File, params?: Record<string, unknown>) => {
-    const form = new FormData();
-    form.append('file', file);
-    return request<T>('POST', path, { body: form, isFormData: true, params });
-  },
+  /**
+   * Upload multipart/form-data (ex.: anexos de ticket/chat, upload de produto).
+   *
+   * ✅ Aceita um `FormData` PRONTO (o chamador controla o nome do campo).
+   * Não define Content-Type manualmente — o navegador insere o boundary.
+   *
+   * Uso:
+   *   const form = new FormData();
+   *   form.append('file', file);
+   *   await api.upload('/tickets/{id}/attachments', form);
+   */
+  upload: <T>(path: string, formData: FormData, params?: Record<string, unknown>) =>
+    request<T>('POST', path, { body: formData, isFormData: true, params }),
 };

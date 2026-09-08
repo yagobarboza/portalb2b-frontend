@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowLeft, MessageCircle, Send } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { toChatMessage, useChatWebSocket } from '../../lib/websocket';
 import type {
   ChatMessage, ChatMessagePage, ChatRoom, CustomerPage, UserPage,
 } from '@/types/api';
-import { formatDateTime } from '../../lib/format';
+import { getAttachmentUrl } from '../../lib/ticketsApi';
+import { formatDateTime } from '../../lib/format'; // ✅ formatDate removido (não usado)
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
+import { Card, CardContent } from '../../components/ui/card'; // ✅ CardContent adicionado
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import {
@@ -21,17 +22,12 @@ import {
 
 const PAGE_SIZE = 50;
 
-// Rótulos aceitam os slugs EM INGLÊS da API e os antigos em português.
 const SECTOR_LABELS: Record<string, string> = {
   sales: 'Vendas',
   commercial: 'Comercial',
   financial: 'Financeiro',
   support: 'Suporte',
   service: 'Serviços',
-  comercial: 'Comercial',
-  financeiro: 'Financeiro',
-  suporte: 'Suporte',
-  garantia: 'Garantia',
 };
 
 const ROOM_STATUS_LABEL: Record<string, string> = {
@@ -52,13 +48,13 @@ export default function CompanyChatPage() {
   const [transferSector, setTransferSector] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
+  const [closeTarget, setCloseTarget] = useState<ChatRoom | null>(null);
+  const [closing, setClosing] = useState(false);
   const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
   const [userMap, setUserMap] = useState<Record<string, string>>({});
-  // ✅ O ref precisa estar NO ELEMENTO ROLÁVEL (div com overflow-y-auto),
-  // não num div dentro de um ScrollArea (cujo viewport interno esconde o scroll).
   const scrollRef = useRef<HTMLDivElement>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
 
-  // Carrega nomes de clientes e membros da equipe.
   useEffect(() => {
     let active = true;
     (async () => {
@@ -67,17 +63,13 @@ export default function CompanyChatPage() {
         const cm: Record<string, string> = {};
         for (const c of cust.items) cm[c.id] = c.name;
         if (active) setCustomerMap(cm);
-      } catch {
-        // não derruba a página
-      }
+      } catch { /* não derruba */ }
       try {
         const users = await api.get<UserPage>('/users', { page: 1, page_size: 100 });
         const um: Record<string, string> = {};
         for (const u of users.items) um[u.id] = u.full_name;
         if (active) setUserMap(um);
-      } catch {
-        // não derruba a página
-      }
+      } catch { /* não derruba */ }
     })();
     return () => { active = false; };
   }, []);
@@ -123,15 +115,9 @@ export default function CompanyChatPage() {
     }
   };
 
-  // ✅ Auto-scroll para a ÚLTIMA/mensagem mais recente assim que as
-  // mensagens mudam (abertura, envio, recebimento via websocket).
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) {
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
+    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [messages, selected?.id]);
 
   const handleSend = async () => {
@@ -146,6 +132,45 @@ export default function CompanyChatPage() {
       toast.error(err instanceof ApiError ? err.message : 'Erro ao enviar mensagem.');
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleAttach = async (file: File) => {
+    if (!selected || sending) return;
+    setSending(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await api.upload<ChatMessage>(`/chat/rooms/${selected.id}/attachments`, formData);
+      await openRoom(selected);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao enviar anexo.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const pickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    if (file) handleAttach(file);
+  };
+
+  const confirmClose = async () => {
+    if (!closeTarget || closing) return;
+    setClosing(true);
+    try {
+      const updated = await api.post<ChatRoom>(`/chat/rooms/${closeTarget.id}/close`);
+      toast.success('Conversa encerrada.');
+      setRooms((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setSelected((prev) => (prev && prev.id === updated.id ? updated : prev));
+      setCloseTarget(null);
+      setMessages([]);
+      await openRoom(updated);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao encerrar a conversa.');
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -204,7 +229,6 @@ export default function CompanyChatPage() {
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4 px-4 pb-4">
-        {/* Lista de conversas */}
         <div className="flex w-full flex-col lg:w-[340px] lg:flex-shrink-0">
           <div className="mb-3 space-y-2">
             <Input
@@ -225,7 +249,6 @@ export default function CompanyChatPage() {
           </div>
 
           <Card className="flex min-h-0 flex-1 flex-col">
-            {/* ✅ Scroll nativo na lista de conversas */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               {loading ? (
                 <p className="p-6 text-center text-sm text-muted-foreground">Carregando…</p>
@@ -244,9 +267,7 @@ export default function CompanyChatPage() {
                         <span className="truncate text-sm font-medium">{customerName(room.customer_id)}</span>
                         <Badge variant="outline" className="text-[10px]">{sectorLabel(room.sector)}</Badge>
                       </div>
-                      {room.status !== 'open' && (
-                        <span className="text-[10px] text-muted-foreground">{statusLabel(room.status)}</span>
-                      )}
+                      <span className="text-[10px] text-muted-foreground">{statusLabel(room.status)}</span>
                     </button>
                   ))}
                 </div>
@@ -255,7 +276,6 @@ export default function CompanyChatPage() {
           </Card>
         </div>
 
-        {/* Chat aberto */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {selected ? (
             <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -269,26 +289,37 @@ export default function CompanyChatPage() {
                     <p className="text-xs text-muted-foreground">{sectorLabel(selected.sector)} · {statusLabel(selected.status)}</p>
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => { setTransferTarget(selected); setTransferSector(''); setTransferError(null); }}
-                >
-                  Transferir setor
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => { setTransferTarget(selected); setTransferSector(''); setTransferError(null); }}>
+                    Transferir setor
+                  </Button>
+                  {!isClosed && (
+                    <Button size="sm" variant="destructive" onClick={() => setCloseTarget(selected)}>
+                      Encerrar conversa
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              {/* ✅ SCROLL CORRIGIDO: div rolável nativa com o ref nela.
-                  Abre sempre na mensagem MAIS RECENTE (auto-scroll). */}
               <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
                 <div className="space-y-3 px-4 py-4">
                   {messages.map((m) => {
-                    const own = m.sender_user_id != null && !m.sender_customer_id;
+                    const own = !!m.sender_user_id && !m.sender_customer_id;
                     return (
                       <div key={m.id} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[75%] rounded-lg border px-3 py-2 ${own ? 'bg-primary/10' : 'bg-muted/30'}`}>
                           <p className="mb-0.5 text-xs font-medium text-muted-foreground">{senderName(m)}</p>
                           <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                          {m.attachment_file_id && (
+                            <a
+                              href={getAttachmentUrl(m.attachment_file_id)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+                            >
+                              <Paperclip className="h-3 w-3" /> Baixar anexo
+                            </a>
+                          )}
                           <p className="mt-1 text-right text-[10px] text-muted-foreground">{formatDateTime(m.created_at)}</p>
                         </div>
                       </div>
@@ -299,6 +330,16 @@ export default function CompanyChatPage() {
 
               {!isClosed ? (
                 <div className="flex gap-2 border-t p-3">
+                  <input
+                    ref={attachRef}
+                    type="file"
+                    className="hidden"
+                    onChange={pickFile}
+                    accept="image/jpeg,image/png,application/pdf"
+                  />
+                  <Button type="button" variant="outline" size="icon" aria-label="Anexar" disabled={sending} onClick={() => attachRef.current?.click()}>
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
                   <Input
                     placeholder="Digite sua mensagem…"
                     value={message}
@@ -312,7 +353,7 @@ export default function CompanyChatPage() {
                   </Button>
                 </div>
               ) : (
-                <p className="border-t p-3 text-center text-sm text-muted-foreground">Conversa encerrada.</p>
+                <p className="border-t p-3 text-center text-sm text-muted-foreground">📌 Conversa encerrada.</p>
               )}
             </Card>
           ) : (
@@ -357,6 +398,23 @@ export default function CompanyChatPage() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal encerrar conversa */}
+      <Dialog open={!!closeTarget} onOpenChange={(o) => { if (!o) setCloseTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Encerrar conversa?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            A conversa com <strong>{closeTarget ? customerName(closeTarget.customer_id) : ''}</strong> será
+            encerrada e o cliente não poderá mais enviar mensagens. Deseja continuar?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseTarget(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={confirmClose} disabled={closing}>
+              {closing ? 'Encerrando…' : 'Encerrar conversa'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
