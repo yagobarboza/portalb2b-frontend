@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 // ── Code-splitting (B12): cada rota carrega seu chunk sob demanda.
 // Reduz o bundle inicial e melhora o TTI. Fallback = spinner discreto.
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const AcceptInvitePage = lazy(() => import('./pages/AcceptInvitePage'));
 const ClientLayout = lazy(() => import('./layouts/ClientLayout'));
 const CompanyLayout = lazy(() => import('./layouts/CompanyLayout'));
 const SuperAdminLayout = lazy(() => import('./layouts/SuperAdminLayout'));
@@ -59,7 +60,11 @@ export default function App() {
           <Suspense fallback={<PageFallback />}>
             <Routes>
               <Route path="/" element={<Navigate to="/login" replace />} />
+
+              {/* Rotas públicas (sem sessão) */}
               <Route path="/login" element={<LoginPage />} />
+              {/* Aceite de convite: link enviado por e-mail (cadastro do admin da empresa). */}
+              <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
               {/* Cliente (customer_id !== null) */}
               <Route element={<ProtectedRoute profiles={['cliente']} />}>
