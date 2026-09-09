@@ -1,15 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { defaultPathForUser } from '../lib/constants';
-import { ApiError } from '../lib/api';
+import { api, ApiError } from '../lib/api';
+import { safeLogoUrl } from '../lib/branding';
+import type { CompanyBranding } from '../types/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { toast } from 'sonner';
 
-const RATE_LIMIT_LOCK_MS = 60000; // bloqueio de interface por 60s em caso de 429
+const RATE_LIMIT_LOCK_MS = 60_000;
+
+/** Marca institucional NYD (usada quando não há logo da empresa no domínio). */
+function NydMark() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary shadow-sm">
+        <Zap className="h-6 w-6 text-primary-foreground" />
+      </div>
+      <div className="text-left">
+        <p className="text-xl font-bold leading-none tracking-tight text-foreground">nydB2B</p>
+        <p className="mt-1 text-xs text-muted-foreground">Portal do Cliente</p>
+      </div>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -22,10 +39,37 @@ export default function LoginPage() {
   const [lockSeconds, setLockSeconds] = useState(0);
   const timerRef = useRef<number | null>(null);
 
-  // Se já autenticado, redireciona para a rota do perfil (evita tela de login duplicada).
+  // Branding público resolvido pelo DOMÍNIO de acesso (pré-login).
+  // - Domínio customizado cadastrado → logo/nome da empresa.
+  // - Sem domínio / empresa sem logo → marca NYD (fallback).
+  const [branding, setBranding] = useState<CompanyBranding | null>(null);
+
+  // Se já autenticado, redireciona para a rota do perfil (evita tela duplicada).
   useEffect(() => {
     if (isAuthenticated && user) navigate(defaultPathForUser(user), { replace: true });
   }, [isAuthenticated, user, navigate]);
+
+  // Resolve branding pelo domínio (endpoint público /companies/by-domain/{domain}).
+  useEffect(() => {
+    let active = true;
+    const host = window.location.hostname;
+    // Só consulta domínios reais; em dev (localhost) cai direto na marca NYD.
+    if (!host || host === 'localhost' || host === '127.0.0.1') return;
+    (async () => {
+      try {
+        const data = await api.get<CompanyBranding>(
+          `/companies/by-domain/${encodeURIComponent(host)}`
+        );
+        if (active) setBranding(data);
+      } catch {
+        // Domínio não cadastrado → branding fica null → marca NYD.
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const companyLogo = safeLogoUrl(branding); // URL validada ou null
+  const companyName = branding?.name?.trim();
 
   // Countdown do bloqueio de 429.
   useEffect(() => {
@@ -64,28 +108,58 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-xl">Acessar nydB2B</CardTitle>
-          <CardDescription>Entre com suas credenciais institucionais.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4" noValidate>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
+      {/* Decoração de fundo suave (layout profissional) */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-primary/10 blur-3xl" />
+      </div>
+
+      <div className="relative w-full max-w-md">
+        {/* Logo dinâmica: empresa (domínio cadastrado) ou NYD */}
+        <div className="mb-6 flex flex-col items-center text-center">
+          {companyLogo ? (
+            <img
+              src={companyLogo}
+              alt={companyName ?? 'Empresa'}
+              className="h-14 max-w-[240px] object-contain"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <NydMark />
+          )}
+        </div>
+
+        <div className="rounded-2xl border bg-card p-6 shadow-lg shadow-black/5 sm:p-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Acesse sua conta
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {companyName
+              ? `Entre com suas credenciais no portal de ${companyName}.`
+              : 'Entre com suas credenciais institucionais.'}
+          </p>
+
+          <form onSubmit={handleLogin} className="mt-6 space-y-4" noValidate>
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>
               <Input
                 id="email"
                 type="email"
                 autoComplete="username"
+                autoFocus
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading || isLocked}
+                className="h-11 rounded-lg"
               />
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Senha</Label>
+              </div>
               <Input
                 id="password"
                 type="password"
@@ -94,14 +168,21 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading || isLocked}
+                className="h-11 rounded-lg"
               />
             </div>
 
             {error && (
-              <p role="alert" className="text-sm text-destructive">{error}</p>
+              <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading || isLocked}>
+            <Button
+              type="submit"
+              className="h-11 w-full rounded-lg text-base font-semibold"
+              disabled={loading || isLocked}
+            >
               {isLocked
                 ? `Aguarde ${lockSeconds}s`
                 : loading
@@ -109,8 +190,12 @@ export default function LoginPage() {
                   : 'Entrar'}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Ambiente seguro · nydB2B
+        </p>
+      </div>
     </div>
   );
 }
