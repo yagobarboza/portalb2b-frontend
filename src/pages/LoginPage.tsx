@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { defaultPathForUser } from '../lib/constants';
 import { api, ApiError } from '../lib/api';
@@ -16,14 +15,9 @@ const RATE_LIMIT_LOCK_MS = 60_000;
 /** Marca institucional NYD (usada quando não há logo da empresa no domínio). */
 function NydMark() {
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary shadow-sm">
-        <Zap className="h-6 w-6 text-primary-foreground" />
-      </div>
-      <div className="text-left">
-        <p className="text-xl font-bold leading-none tracking-tight text-foreground">nydB2B</p>
-        <p className="mt-1 text-xs text-muted-foreground">Portal do Cliente</p>
-      </div>
+    <div className="text-center">
+      <p className="text-2xl font-bold tracking-tight text-foreground">nydB2B</p>
+      <p className="mt-1 text-xs text-muted-foreground">Portal do Cliente</p>
     </div>
   );
 }
