@@ -7,6 +7,7 @@ import ClientLayout from './layouts/ClientLayout';
 import CompanyLayout from './layouts/CompanyLayout';
 import SuperAdminLayout from './layouts/SuperAdminLayout';
 import StorePage from './pages/client/StorePage';
+import ProductPage from './pages/client/ProductPage'; // ✅ página de produto (e-commerce)
 import CartPage from './pages/client/CartPage';
 import OrdersPage from './pages/client/OrdersPage';
 import TicketsPage from './pages/client/TicketsPage';
@@ -36,6 +37,7 @@ export default function App() {
             <Route element={<ProtectedRoute profiles={['cliente']} />}>
               <Route element={<ClientLayout />}>
                 <Route path="/loja" element={<StorePage />} />
+                <Route path="/loja/produto/:id" element={<ProductPage />} />
                 <Route path="/carrinho" element={<CartPage />} />
                 <Route path="/pedidos" element={<OrdersPage />} />
                 <Route path="/tickets" element={<TicketsPage />} />

@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Minus, Package, Plus, Search, ShoppingCart } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { isSafeImageUrl } from '../../lib/uploads';
-import type { Category, PriceQuote, Product } from '@/types/api';
+import type { Category, Product } from '@/types/api';
 import { formatCurrency } from '../../lib/format';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from '../../components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../components/ui/select';
@@ -82,6 +78,7 @@ interface StorePageData {
 }
 
 export default function StorePage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { addItem, registerProduct } = useCart();
   const [products, setProducts] = useState<StoreProduct[]>([]);
@@ -91,9 +88,6 @@ export default function StorePage() {
   const [searchDebounced, setSearchDebounced] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
-  const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
-  const [detailQuote, setDetailQuote] = useState<PriceQuote | null>(null);
-  const [detailQty, setDetailQty] = useState(1);
   const [adding, setAdding] = useState(false);
   // Quantidade por produto no CARD (como ecommerce) — default 1.
   const [qtys, setQtys] = useState<Record<string, number>>({});
@@ -157,7 +151,6 @@ export default function StorePage() {
       await addItem(product.id, qty);
       registerProduct(product);
       toast.success(`${qty}× ${product.name} adicionado ao carrinho.`);
-      setDetailProduct(null);
       setQtys((prev) => ({ ...prev, [product.id]: 1 }));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Erro ao adicionar ao carrinho.');
@@ -166,27 +159,8 @@ export default function StorePage() {
     }
   };
 
-  const openDetail = async (product: Product) => {
-    setDetailProduct(product);
-    setDetailQuote(null);
-    setDetailQty(1);
-    if (user?.customer_id) {
-      try {
-        const quote = await api.get<PriceQuote>(
-          `/catalog/products/${product.id}/quote`,
-          { customer_id: user.customer_id },
-        );
-        setDetailQuote(quote);
-      } catch {
-        // Sem preço negociado → usa o preço padrão.
-      }
-    }
-  };
-
-  const priceOf = (p: Product) => {
-    const q = detailProduct?.id === p.id ? detailQuote : null;
-    return Number(q?.final_price ?? q?.customer_price ?? p.price);
-  };
+  // ✅ Clique no card → PÁGINA de produto (e-commerce), não mais modal.
+  const openProduct = (productId: string) => navigate(`/loja/produto/${productId}`);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
@@ -251,7 +225,7 @@ export default function StorePage() {
                 <button
                   type="button"
                   className="flex h-36 w-full items-center justify-center overflow-hidden bg-muted/50"
-                  onClick={() => openDetail(p)}
+                  onClick={() => openProduct(p.id)}
                 >
                   {isSafeImageUrl(p.image_url) ? (
                     <img
@@ -266,7 +240,7 @@ export default function StorePage() {
                   )}
                 </button>
                 <CardContent className="flex flex-1 flex-col gap-2 p-3">
-                  <button type="button" className="text-left" onClick={() => openDetail(p)}>
+                  <button type="button" className="text-left" onClick={() => openProduct(p.id)}>
                     <h3 className="line-clamp-2 font-semibold leading-tight">{p.name}</h3>
                     <p className="text-xs text-muted-foreground">
                       {p.brand ?? ''}{p.unit ? ` · ${p.unit}` : ''}
@@ -354,105 +328,6 @@ export default function StorePage() {
           })}
         </div>
       )}
-
-      {/* Detalhe + cotação */}
-      <Dialog open={!!detailProduct} onOpenChange={(o) => { if (!o) { setDetailProduct(null); setDetailQuote(null); } }}>
-        <DialogContent className="max-w-md">
-          {detailProduct && (
-            <>
-              <DialogHeader><DialogTitle>{detailProduct.name}</DialogTitle></DialogHeader>
-              <div className="space-y-4">
-                <div className="flex items-start gap-4">
-                  {isSafeImageUrl(detailProduct.image_url) ? (
-                    <img
-                      src={detailProduct.image_url}
-                      alt={detailProduct.name}
-                      className="h-24 w-24 rounded object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="flex h-24 w-24 items-center justify-center rounded bg-muted/50">
-                      <Package className="h-8 w-8 text-muted-foreground/60" />
-                    </div>
-                  )}
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">
-                      {detailProduct.brand ?? '—'} · {detailProduct.unit ?? 'un'}
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {detailProduct.brand && <Badge variant="secondary">{detailProduct.brand}</Badge>}
-                      {detailProduct.unit && <Badge variant="secondary">{detailProduct.unit}</Badge>}
-                      <StockBadge stock={stockOf(detailProduct)} />
-                    </div>
-                    {/* ✅ "De X" riscado no detalhe quando há preço negociado */}
-                    {detailQuote?.customer_price != null && (
-                      <p className="text-xs text-muted-foreground line-through">
-                        De {formatCurrency(Number(detailQuote.base_price) * detailQty)}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {detailQuote ? (detailQuote.customer_price !== null ? 'Preço negociado' : 'Preço de tabela') : 'Preço padrão'}
-                      {detailQuote?.customer_price != null && ' · Preço especial'}
-                    </p>
-                    <p className="text-2xl font-bold">
-                      {formatCurrency(priceOf(detailProduct) * detailQty)}
-                    </p>
-                  </div>
-                </div>
-                {/* Stepper de quantidade no detalhe */}
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium">Quantidade</Label>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-9 w-9"
-                      disabled={detailQty <= 1}
-                      onClick={() => setDetailQty((q) => Math.max(1, q - 1))}
-                      aria-label="Diminuir"
-                    >
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={Math.max(1, stockOf(detailProduct))}
-                      step={1}
-                      value={detailQty}
-                      onChange={(e) =>
-                        setDetailQty(Math.max(1, Math.min(Math.max(1, stockOf(detailProduct)), Math.trunc(Number(e.target.value) || 1))))
-                      }
-                      className="h-9 w-20 text-center"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-9 w-9"
-                      disabled={stockOf(detailProduct) > 0 && detailQty >= stockOf(detailProduct)}
-                      onClick={() => setDetailQty((q) => q + 1)}
-                      aria-label="Aumentar"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  className="w-full"
-                  disabled={stockOf(detailProduct) <= 0 || adding}
-                  onClick={() => handleAdd(detailProduct, detailQty)}
-                >
-                  <ShoppingCart className="mr-2 h-4 w-4" />
-                  {adding ? 'Adicionando…' : `Adicionar ${detailQty} ao carrinho`}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

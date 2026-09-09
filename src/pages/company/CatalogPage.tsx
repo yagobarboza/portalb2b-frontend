@@ -18,13 +18,13 @@ import {
 } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Textarea } from '../../components/ui/textarea';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../components/ui/table';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../components/ui/select';
+import { DescriptionField } from '../../components/DescriptionField';
 
 const PAGE_SIZE = 20;
 const NO_CATEGORY = 'none';
@@ -157,7 +157,6 @@ export default function CatalogPage() {
     }
   }, [page, searchDebounced, categoryFilter]);
   useEffect(() => { loadProducts(); }, [loadProducts]);
-
   useEffect(() => () => revokeObjectPreview(preview), [preview]);
 
   const resetForm = () => {
@@ -170,10 +169,15 @@ export default function CatalogPage() {
   };
 
   const setField = (field: keyof ProductForm) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
       setFormError(null);
     };
+
+  const setDescription = (value: string) => {
+    setForm((prev) => ({ ...prev, description: value }));
+    setFormError(null);
+  };
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -355,10 +359,15 @@ export default function CatalogPage() {
                     <Input id="unit" value={form.unit} onChange={setField('unit')} placeholder="un" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description">Descrição</Label>
-                  <Textarea id="description" rows={2} value={form.description} onChange={setField('description')} />
-                </div>
+
+                {/* ✅ Descrição com modo Texto/HTML + prévia sanitizada (Bloco Vitrine) */}
+                <DescriptionField
+                  id="description"
+                  value={form.description}
+                  onChange={setDescription}
+                  rows={2}
+                />
+
                 <div className="rounded-lg border border-dashed p-4 text-center">
                   <input
                     ref={fileRef}
@@ -550,10 +559,15 @@ export default function CatalogPage() {
                   <Input id="edit-unit" value={form.unit} onChange={setField('unit')} />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-description">Descrição</Label>
-                <Textarea id="edit-description" rows={2} value={form.description} onChange={setField('description')} />
-              </div>
+
+              {/* ✅ Descrição com modo Texto/HTML + prévia sanitizada (Bloco Vitrine) */}
+              <DescriptionField
+                id="edit-description"
+                value={form.description}
+                onChange={setDescription}
+                rows={2}
+              />
+
               <div className="rounded-lg border border-dashed p-4 text-center">
                 <input
                   ref={fileRef}
