@@ -29,6 +29,10 @@ import {
 
 const PAGE_SIZE = 20;
 
+// Ticket com o nome do responsável (agora enviado pelo backend).
+type TicketDetailWithName = TicketDetail & { assignee_name?: string | null };
+type TicketWithName = Ticket & { assignee_name?: string | null };
+
 // ── Paleta de status e prioridade: legível em Light e Dark ───────────────────
 const STATUS_CHIP: Record<TicketStatus, string> = {
   open: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-100',
@@ -56,7 +60,7 @@ function Chip({ className, children }: { className?: string; children: React.Rea
 
 export default function CompanyTicketsPage() {
   const { user } = useAuth();
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tickets, setTickets] = useState<TicketWithName[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -67,7 +71,7 @@ export default function CompanyTicketsPage() {
   const [filterPriority, setFilterPriority] = useState<'all' | TicketPriority>('all');
   const [assignees, setAssignees] = useState<UserPage['items']>([]);
   const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
-  const [detail, setDetail] = useState<TicketDetail | null>(null);
+  const [detail, setDetail] = useState<TicketDetailWithName | null>(null);
   const [message, setMessage] = useState('');
   const [isInternal, setIsInternal] = useState(false);
   const [sending, setSending] = useState(false);
@@ -105,6 +109,12 @@ export default function CompanyTicketsPage() {
     return map;
   }, [assignees]);
 
+  // ✅ Nome do responsável: backend primeiro, depois mapa local, nunca UUID cru.
+  const assigneeLabel = (t: { assignee_id?: string | null; assignee_name?: string | null }) => {
+    if (!t.assignee_id) return '—';
+    return t.assignee_name ?? assigneeNameMap[t.assignee_id] ?? '—';
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -114,7 +124,7 @@ export default function CompanyTicketsPage() {
         ...(filterStatus !== 'all' ? { status: filterStatus } : {}),
         ...(filterPriority !== 'all' ? { priority: filterPriority } : {}),
       });
-      setTickets(data.items);
+      setTickets(data.items as TicketWithName[]);
       setTotal(data.total);
       setPages(Math.max(1, Math.ceil(data.total / PAGE_SIZE)));
     } catch {
@@ -127,7 +137,7 @@ export default function CompanyTicketsPage() {
 
   const openTicket = async (t: Ticket) => {
     try {
-      const full = await getTicket(t.id);
+      const full = (await getTicket(t.id)) as TicketDetailWithName;
       setDetail(full);
       setActionError(null);
       setNewStatus('');
@@ -145,7 +155,7 @@ export default function CompanyTicketsPage() {
     try {
       await sendTicketMessage(detail.id, message.trim(), isInternal);
       setMessage('');
-      setDetail(await getTicket(detail.id));
+      setDetail((await getTicket(detail.id)) as TicketDetailWithName);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Erro ao enviar mensagem.');
     } finally {
@@ -158,7 +168,7 @@ export default function CompanyTicketsPage() {
     setSending(true);
     try {
       await uploadTicketAttachment(detail.id, file);
-      setDetail(await getTicket(detail.id));
+      setDetail((await getTicket(detail.id)) as TicketDetailWithName);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Erro ao enviar anexo.');
     } finally {
@@ -179,7 +189,7 @@ export default function CompanyTicketsPage() {
     try {
       await updateTicketStatus(detail.id, newStatus);
       toast.success('Status atualizado.');
-      setDetail(await getTicket(detail.id));
+      setDetail((await getTicket(detail.id)) as TicketDetailWithName);
       setNewStatus('');
       load();
     } catch (err) {
@@ -196,7 +206,7 @@ export default function CompanyTicketsPage() {
     try {
       await assignTicket(detail.id, newAssignee);
       toast.success('Responsável atribuído.');
-      setDetail(await getTicket(detail.id));
+      setDetail((await getTicket(detail.id)) as TicketDetailWithName);
       setNewAssignee('');
       load();
     } catch (err) {
@@ -292,6 +302,11 @@ export default function CompanyTicketsPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {t.assignee_id && (
+                          <Chip className="border border-border text-muted-foreground">
+                            Resp.: {assigneeLabel(t)}
+                          </Chip>
+                        )}
                         <Chip className={STATUS_CHIP[t.status]}>{ticketStatusLabel(t.status)}</Chip>
                         <Chip className={PRIORITY_CHIP[t.priority]}>{ticketPriorityLabel(t.priority)}</Chip>
                       </div>
@@ -332,7 +347,7 @@ export default function CompanyTicketsPage() {
                 )}
                 {detail.assignee_id && (
                   <Chip className="border border-border text-muted-foreground">
-                    Resp.: {assigneeNameMap[detail.assignee_id] ?? detail.assignee_id.slice(0, 8)}
+                    Resp.: {assigneeLabel(detail)}
                   </Chip>
                 )}
               </div>
