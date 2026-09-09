@@ -42,13 +42,13 @@ export default function ClientLayout() {
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4">
-          {/* Logo — branding real do tenant com fallback institucional */}
+          {/* Logo — branding real do tenant com fallback institucional (40px) */}
           <div className="mr-4 flex flex-shrink-0 items-center gap-2">
             {logoUrl ? (
-              <img src={logoUrl} alt={branding?.name ?? 'nydB2B'} className="h-8 w-8 rounded-lg object-contain" referrerPolicy="no-referrer" />
+              <img src={logoUrl} alt={branding?.name ?? 'nydB2B'} className="h-10 w-10 rounded-lg object-contain" referrerPolicy="no-referrer" />
             ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                <Zap className="h-5 w-5 text-primary-foreground" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
+                <Zap className="h-6 w-6 text-primary-foreground" />
               </div>
             )}
             <div className="hidden sm:block">

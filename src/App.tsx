@@ -15,6 +15,7 @@ import FinancialPage from './pages/client/FinancialPage';
 // CatalogPage é um arquivo próprio — NÃO é exportado por CompanyPages.
 import CatalogPage from './pages/company/CatalogPage';
 import CategoriesPage from './pages/company/CategoriesPage';
+import PricingPage from './pages/company/PricingPage';
 import CompanyFinancialPage from './pages/company/CompanyFinancialPage';
 import CompaniesPage from './pages/superadmin/CompaniesPage';
 import {
@@ -54,6 +55,7 @@ export default function App() {
                 <Route path="/empresa/equipe" element={<TeamPage />} />
                 <Route path="/empresa/tickets" element={<CompanyTicketsPage />} />
                 <Route path="/empresa/chat" element={<CompanyChatPage />} />
+                <Route path="/empresa/precos" element={<PricingPage />} />
                 <Route path="/empresa/financeiro" element={<CompanyFinancialPage />} />
               </Route>
             </Route>

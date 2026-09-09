@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Building2, Pencil, Plus, Search } from 'lucide-react';
+import { Building2, Plus, Search } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import type { Company, CompanyPage } from '../../types/api';
 import { isValidHexColor } from '../../lib/branding';
@@ -14,7 +14,6 @@ import {
 } from '../../components/ui/dialog';
 
 interface CompanyForm {
-  id?: string;
   name: string;
   cnpj: string;
   slug: string;
@@ -41,7 +40,6 @@ export default function CompaniesPage() {
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<CompanyForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,27 +66,7 @@ export default function CompaniesPage() {
   useEffect(() => { load(); }, [load]);
 
   const openCreate = () => {
-    setEditing(false);
     setForm(emptyForm);
-    setError(null);
-    setOpen(true);
-  };
-
-  const openEdit = (c: Company) => {
-    setEditing(true);
-    setForm({
-      id: c.id,
-      name: c.name,
-      cnpj: c.cnpj ?? '',
-      slug: c.slug,
-      domain: c.domain ?? '',
-      admin_email: '',
-      admin_full_name: '',
-      primary_color: c.primary_color ?? '#2563eb',
-      secondary_color: c.secondary_color ?? '#0f172a',
-      logo_url: (c as Company & { logo_url?: string | null }).logo_url ?? '',
-      favicon_url: (c as Company & { favicon_url?: string | null }).favicon_url ?? '',
-    });
     setError(null);
     setOpen(true);
   };
@@ -102,8 +80,8 @@ export default function CompaniesPage() {
     if (!/^[a-z0-9-]+$/.test(form.slug.trim())) return 'Slug inválido (use minúsculas, números, hífen).';
     if (form.primary_color && !isValidHexColor(form.primary_color)) return 'Cor primária inválida.';
     if (form.secondary_color && !isValidHexColor(form.secondary_color)) return 'Cor secundária inválida.';
-    if (!editing && !form.admin_email.trim()) return 'Informe o e-mail do administrador.';
-    if (!editing && !form.admin_full_name.trim()) return 'Informe o nome do administrador.';
+    if (!form.admin_email.trim()) return 'Informe o e-mail do administrador.';
+    if (!form.admin_full_name.trim()) return 'Informe o nome do administrador.';
     return null;
   };
 
@@ -115,33 +93,22 @@ export default function CompaniesPage() {
     setSaving(true);
     setError(null);
     try {
-      if (editing && form.id) {
-        await api.patch<Company>(`/companies/${form.id}`, {
-          name: form.name.trim(),
-          slug: form.slug.trim(),
-          domain: form.domain.trim() || null,
-          primary_color: form.primary_color || null,
-          secondary_color: form.secondary_color || null,
-          logo_url: form.logo_url.trim() || null,
-          favicon_url: form.favicon_url.trim() || null,
-        });
-        toast.success('Empresa atualizada (logo e branding salvos).');
-      } else {
-        await api.post('/companies', {
-          name: form.name.trim(),
-          cnpj: form.cnpj.trim(),
-          slug: form.slug.trim(),
-          domain: form.domain.trim() || null,
-          admin_email: form.admin_email.trim(),
-          admin_full_name: form.admin_full_name.trim(),
-          primary_color: form.primary_color || null,
-          secondary_color: form.secondary_color || null,
-          logo_url: form.logo_url.trim() || null,
-          favicon_url: form.favicon_url.trim() || null,
-        });
-        toast.success('Empresa criada e administrador convidado.');
-      }
+      await api.post('/companies', {
+        name: form.name.trim(),
+        cnpj: form.cnpj.trim(),
+        slug: form.slug.trim(),
+        domain: form.domain.trim() || null,
+        admin_email: form.admin_email.trim(),
+        admin_full_name: form.admin_full_name.trim(),
+        primary_color: form.primary_color || null,
+        secondary_color: form.secondary_color || null,
+        logo_url: form.logo_url.trim() || null,
+        favicon_url: form.favicon_url.trim() || null,
+      });
+      toast.success('Empresa criada e administrador convidado.');
       setOpen(false);
+      setForm(emptyForm);
+      setPage(1);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Erro ao salvar empresa.');
@@ -196,9 +163,6 @@ export default function CompaniesPage() {
                         </Badge>
                       </div>
                     </div>
-                    <Button size="icon" variant="ghost" onClick={() => openEdit(c)} aria-label={`Editar ${c.name}`}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
                   </CardContent>
                 </Card>
               );
@@ -217,63 +181,43 @@ export default function CompaniesPage() {
         </div>
       )}
 
-      {/* Modal criar/editar */}
+      {/* Modal de criação */}
       <Dialog open={open} onOpenChange={(o) => { if (!o) setOpen(false); }}>
         <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? 'Editar empresa e branding' : 'Nova empresa'}</DialogTitle>
+            <DialogTitle>Nova empresa</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            {!editing && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="c-name">Nome *</Label>
-                    <Input id="c-name" value={form.name} onChange={set('name')} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="c-cnpj">CNPJ *</Label>
-                    <Input id="c-cnpj" value={form.cnpj} onChange={set('cnpj')} required />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="c-slug">Slug *</Label>
-                    <Input id="c-slug" value={form.slug} onChange={set('slug')} placeholder="minha-empresa" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="c-domain">Domínio</Label>
-                    <Input id="c-domain" value={form.domain} onChange={set('domain')} placeholder="empresa.com.br" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="c-admin">E-mail do admin *</Label>
-                    <Input id="c-admin" type="email" value={form.admin_email} onChange={set('admin_email')} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="c-adminname">Nome do admin *</Label>
-                    <Input id="c-adminname" value={form.admin_full_name} onChange={set('admin_full_name')} required />
-                  </div>
-                </div>
-              </>
-            )}
-            {editing && (
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="c-name">Nome *</Label>
                 <Input id="c-name" value={form.name} onChange={set('name')} required />
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="c-slug">Slug *</Label>
-                    <Input id="c-slug" value={form.slug} onChange={set('slug')} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="c-domain">Domínio</Label>
-                    <Input id="c-domain" value={form.domain} onChange={set('domain')} />
-                  </div>
-                </div>
               </div>
-            )}
+              <div className="space-y-2">
+                <Label htmlFor="c-cnpj">CNPJ *</Label>
+                <Input id="c-cnpj" value={form.cnpj} onChange={set('cnpj')} required />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="c-slug">Slug *</Label>
+                <Input id="c-slug" value={form.slug} onChange={set('slug')} placeholder="minha-empresa" required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="c-domain">Domínio</Label>
+                <Input id="c-domain" value={form.domain} onChange={set('domain')} placeholder="empresa.com.br" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="c-admin">E-mail do admin *</Label>
+                <Input id="c-admin" type="email" value={form.admin_email} onChange={set('admin_email')} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="c-adminname">Nome do admin *</Label>
+                <Input id="c-adminname" value={form.admin_full_name} onChange={set('admin_full_name')} required />
+              </div>
+            </div>
 
             {/* Branding: logo + favicon + cores */}
             <div className="rounded-lg border p-4">
@@ -314,7 +258,7 @@ export default function CompaniesPage() {
 
             {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
-              <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : editing ? 'Salvar branding' : 'Criar empresa'}</Button>
+              <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Criar empresa'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

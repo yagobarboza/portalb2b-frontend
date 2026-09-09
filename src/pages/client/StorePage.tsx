@@ -5,7 +5,7 @@ import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { isSafeImageUrl } from '../../lib/uploads';
-import type { Category, PriceQuote, Product, ProductPage } from '@/types/api';
+import type { Category, PriceQuote, Product } from '@/types/api';
 import { formatCurrency } from '../../lib/format';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -30,17 +30,68 @@ const stockOf = (p: Product | null | undefined): number => {
   return Math.max(0, Math.trunc(v));
 };
 
+/* Chip de estoque legível em Light e Dark (fundo invertido ao foreground). */
+function StockBadge({ stock }: { stock: number }) {
+  if (stock <= 0) {
+    return (
+      <span className="inline-flex shrink-0 items-center rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-white">
+        Esgotado
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-foreground px-2 py-0.5 text-xs font-medium text-background">
+      {stock} em estoque
+    </span>
+  );
+}
+
+/** Product + campos de preço calculado que o backend anexa na listagem. */
+type StoreProduct = Product & {
+  customer_price?: number | null;
+  final_price?: number | null;
+  price_source?: 'customer' | 'price_list' | 'default' | null;
+};
+
+/** Interpreta o preço do card: tem preço especial? (De/Por) */
+const priceInfo = (p: StoreProduct) => {
+  const base = Number(p.price);
+  const final = p.final_price != null ? Number(p.final_price) : base;
+  const isSpecial =
+    p.price_source === 'customer' &&
+    final > 0 &&
+    Math.abs(final - base) > 0.001;
+  return { base, final, isSpecial };
+};
+
+/** Selo "Preço especial" — legível em Light e Dark (fundo invertido). */
+function SpecialBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-foreground px-1.5 py-0.5 text-[10px] font-semibold text-background">
+      Preço especial
+    </span>
+  );
+}
+
+interface StorePageData {
+  items: StoreProduct[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
 export default function StorePage() {
   const { user } = useAuth();
   const { addItem, registerProduct } = useCart();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<StoreProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
-  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [detailQuote, setDetailQuote] = useState<PriceQuote | null>(null);
   const [detailQty, setDetailQty] = useState(1);
   const [adding, setAdding] = useState(false);
@@ -48,7 +99,6 @@ export default function StorePage() {
   const [qtys, setQtys] = useState<Record<string, number>>({});
 
   const firstName = user?.full_name?.trim().split(' ')[0] || 'visitante';
-
   const qtyOf = (productId: string) => qtys[productId] ?? 1;
   const setQty = (productId: string, qty: number) =>
     setQtys((prev) => ({ ...prev, [productId]: qty }));
@@ -73,7 +123,7 @@ export default function StorePage() {
     return () => { active = false; };
   }, []);
 
-  // Produtos (backend filtra/ordena; preço negociado é recalculado).
+  // Produtos (backend filtra/ordena e anexa o preço especial do cliente).
   const loadProducts = useCallback(async () => {
     setLoading(true);
     try {
@@ -82,11 +132,13 @@ export default function StorePage() {
         : sortBy === 'price-desc' ? { sort_by: 'price', sort_dir: 'desc' }
         : sortBy === 'name-asc' ? { sort_by: 'name', sort_dir: 'asc' }
         : {};
-      const data = await api.get<ProductPage>('/catalog/products', {
+      const data = await api.get<StorePageData>('/catalog/products', {
         page: 1,
         page_size: PAGE_SIZE,
         search: searchDebounced || undefined,
         category_id: selectedCategory || undefined,
+        // O backend FORÇA o customer_id do próprio cliente (anti-vazamento)
+        customer_id: user?.customer_id ?? undefined,
         ...sortParams,
       });
       setProducts(data.items);
@@ -96,8 +148,7 @@ export default function StorePage() {
     } finally {
       setLoading(false);
     }
-  }, [searchDebounced, selectedCategory, sortBy, registerProduct]);
-
+  }, [searchDebounced, selectedCategory, sortBy, user?.customer_id, registerProduct]);
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
   const handleAdd = async (product: Product, qty: number) => {
@@ -185,7 +236,7 @@ export default function StorePage() {
         <p className="py-16 text-center text-muted-foreground">Carregando produtos…</p>
       ) : products.length === 0 ? (
         <div className="py-20 text-center">
-          <Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/30" />
+          <Package className="mx-auto mb-4 h-16 w-16 text-muted-foreground/50" />
           <h3 className="text-lg font-semibold text-muted-foreground">Nenhum produto encontrado</h3>
         </div>
       ) : (
@@ -194,6 +245,7 @@ export default function StorePage() {
             const stock = stockOf(p);
             const out = stock <= 0;
             const qty = Math.min(qtyOf(p.id), Math.max(1, stock));
+            const { base, final, isSpecial } = priceInfo(p);
             return (
               <Card key={p.id} className="flex flex-col overflow-hidden">
                 <button
@@ -210,10 +262,9 @@ export default function StorePage() {
                       loading="lazy"
                     />
                   ) : (
-                    <Package className="h-10 w-10 text-muted-foreground/40" />
+                    <Package className="h-10 w-10 text-muted-foreground/60" />
                   )}
                 </button>
-
                 <CardContent className="flex flex-1 flex-col gap-2 p-3">
                   <button type="button" className="text-left" onClick={() => openDetail(p)}>
                     <h3 className="line-clamp-2 font-semibold leading-tight">{p.name}</h3>
@@ -222,14 +273,29 @@ export default function StorePage() {
                     </p>
                   </button>
 
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-lg font-bold">{formatCurrency(Number(p.price))}</span>
-                    {/* ✅ Estoque SEMPRE inteiro e visível no card */}
-                    {out ? (
-                      <Badge variant="destructive">Esgotado</Badge>
-                    ) : (
-                      <Badge variant="secondary">{stock} em estoque</Badge>
-                    )}
+                  {/* ✅ Preço do card: "De X" riscado → "Por Y" + selo, quando especial */}
+                  <div className="flex items-end justify-between gap-2">
+                    <div className="min-w-0">
+                      {isSpecial ? (
+                        <>
+                          <span className="block text-xs leading-none text-muted-foreground line-through">
+                            De {formatCurrency(base)}
+                          </span>
+                          <span className="mt-0.5 block text-lg font-bold leading-none">
+                            Por {formatCurrency(final)}
+                          </span>
+                          <span className="mt-1 block">
+                            <SpecialBadge />
+                          </span>
+                        </>
+                      ) : (
+                        <span className="block text-lg font-bold leading-none">
+                          {formatCurrency(base)}
+                        </span>
+                      )}
+                    </div>
+                    {/* ✅ Estoque SEMPRE inteiro e visível no card (contraste Light/Dark) */}
+                    <StockBadge stock={stock} />
                   </div>
 
                   {/* ✅ Stepper de quantidade no card (como ecommerce) */}
@@ -306,7 +372,7 @@ export default function StorePage() {
                     />
                   ) : (
                     <div className="flex h-24 w-24 items-center justify-center rounded bg-muted/50">
-                      <Package className="h-8 w-8 text-muted-foreground/40" />
+                      <Package className="h-8 w-8 text-muted-foreground/60" />
                     </div>
                   )}
                   <div className="space-y-1">
@@ -316,19 +382,23 @@ export default function StorePage() {
                     <div className="flex flex-wrap gap-1">
                       {detailProduct.brand && <Badge variant="secondary">{detailProduct.brand}</Badge>}
                       {detailProduct.unit && <Badge variant="secondary">{detailProduct.unit}</Badge>}
-                      <Badge variant={stockOf(detailProduct) <= 0 ? 'destructive' : 'default'}>
-                        {stockOf(detailProduct) <= 0 ? 'Esgotado' : `${stockOf(detailProduct)} em estoque`}
-                      </Badge>
+                      <StockBadge stock={stockOf(detailProduct)} />
                     </div>
+                    {/* ✅ "De X" riscado no detalhe quando há preço negociado */}
+                    {detailQuote?.customer_price != null && (
+                      <p className="text-xs text-muted-foreground line-through">
+                        De {formatCurrency(Number(detailQuote.base_price) * detailQty)}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       {detailQuote ? (detailQuote.customer_price !== null ? 'Preço negociado' : 'Preço de tabela') : 'Preço padrão'}
+                      {detailQuote?.customer_price != null && ' · Preço especial'}
                     </p>
                     <p className="text-2xl font-bold">
                       {formatCurrency(priceOf(detailProduct) * detailQty)}
                     </p>
                   </div>
                 </div>
-
                 {/* Stepper de quantidade no detalhe */}
                 <div className="flex items-center gap-2">
                   <Label className="text-sm font-medium">Quantidade</Label>

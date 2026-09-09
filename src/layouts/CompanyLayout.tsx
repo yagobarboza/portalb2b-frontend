@@ -9,13 +9,14 @@ import { Button } from '../components/ui/button';
 import { ModeToggle } from '../components/mode-toggle';
 import {
   LayoutDashboard, Package, Users, ShoppingBag, UserCog, TicketIcon,
-  MessageCircle, CreditCard, Zap, LogOut, FolderTree,
+  MessageCircle, CreditCard, Zap, LogOut, FolderTree, BadgePercent,
 } from 'lucide-react';
 
 const menuItems = [
   { label: 'Visão Geral', href: '/empresa', icon: LayoutDashboard, exact: true },
   { label: 'Catálogo', href: '/empresa/catalogo', icon: Package },
   { label: 'Categorias', href: '/empresa/categorias', icon: FolderTree, permission: PERMISSIONS.CATALOG_MANAGE },
+  { label: 'Preços Especiais', href: '/empresa/precos', icon: BadgePercent, permission: PERMISSIONS.CATALOG_MANAGE },
   { label: 'Clientes', href: '/empresa/clientes', icon: Users },
   { label: 'Pedidos', href: '/empresa/pedidos', icon: ShoppingBag },
   { label: 'Equipe', href: '/empresa/equipe', icon: UserCog, permission: PERMISSIONS.USER_READ },
@@ -48,13 +49,13 @@ export default function CompanyLayout() {
     <div className="min-h-screen bg-background">
       {/* Header topo (logo + nome + ações) */}
       <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-background/95 px-4 backdrop-blur">
-        {/* Logo da empresa (cadastrada pelo Super Admin) no canto superior esquerdo */}
+        {/* Logo da empresa (cadastrada pelo Super Admin) no canto superior esquerdo (40px) */}
         <div className="flex items-center gap-2">
           {logoUrl ? (
-            <img src={logoUrl} alt={branding?.name ?? 'nydB2B'} className="h-8 w-8 rounded-lg object-contain" referrerPolicy="no-referrer" />
+            <img src={logoUrl} alt={branding?.name ?? 'nydB2B'} className="h-10 w-10 rounded-lg object-contain" referrerPolicy="no-referrer" />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Zap className="h-5 w-5 text-primary-foreground" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
+              <Zap className="h-6 w-6 text-primary-foreground" />
             </div>
           )}
           <span className="hidden text-sm font-bold sm:block">{branding?.name ?? 'nydB2B'}</span>

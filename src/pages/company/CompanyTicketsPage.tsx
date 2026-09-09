@@ -9,13 +9,12 @@ import {
 } from '../../lib/ticketsApi';
 import { ChatAttachment } from '../../components/chat/ChatAttachment'; // ✅ substitui getAttachmentUrl
 import {
-  ticketPriorityClass, ticketPriorityLabel, ticketStatusClass, ticketStatusLabel,
+  ticketPriorityLabel, ticketStatusLabel,
 } from '../../lib/ticketStatus';
 import { formatDateTime } from '../../lib/format';
 import type {
   CustomerPage, Ticket, TicketDetail, TicketPriority, TicketStatus, UserPage,
 } from '@/types/api';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
@@ -29,6 +28,31 @@ import {
 } from '../../components/ui/select';
 
 const PAGE_SIZE = 20;
+
+// ── Paleta de status e prioridade: legível em Light e Dark ───────────────────
+const STATUS_CHIP: Record<TicketStatus, string> = {
+  open: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-100',
+  under_review: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-100',
+  awaiting_company: 'bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-100',
+  awaiting_customer: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100',
+  resolved: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-100',
+  closed: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100',
+};
+
+const PRIORITY_CHIP: Record<TicketPriority, string> = {
+  low: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100',
+  medium: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-100',
+  high: 'bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-100',
+  urgent: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100',
+};
+
+function Chip({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${className ?? ''}`}>
+      {children}
+    </span>
+  );
+}
 
 export default function CompanyTicketsPage() {
   const { user } = useAuth();
@@ -99,7 +123,6 @@ export default function CompanyTicketsPage() {
       setLoading(false);
     }
   }, [page, filterStatus, filterPriority]);
-
   useEffect(() => { load(); }, [load]);
 
   const openTicket = async (t: Ticket) => {
@@ -246,7 +269,7 @@ export default function CompanyTicketsPage() {
             <p className="py-10 text-center text-muted-foreground">Carregando…</p>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
-              <TicketIcon className="mb-3 h-10 w-10 text-muted-foreground/40" />
+              <TicketIcon className="mb-3 h-10 w-10 text-muted-foreground/50" />
               <h3 className="text-lg font-semibold text-muted-foreground">Nenhum chamado encontrado</h3>
             </div>
           ) : (
@@ -269,8 +292,8 @@ export default function CompanyTicketsPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge className={ticketStatusClass(t.status)}>{ticketStatusLabel(t.status)}</Badge>
-                        <Badge className={ticketPriorityClass(t.priority)}>{ticketPriorityLabel(t.priority)}</Badge>
+                        <Chip className={STATUS_CHIP[t.status]}>{ticketStatusLabel(t.status)}</Chip>
+                        <Chip className={PRIORITY_CHIP[t.priority]}>{ticketPriorityLabel(t.priority)}</Chip>
                       </div>
                     </div>
                   </button>
@@ -301,24 +324,24 @@ export default function CompanyTicketsPage() {
                   #{detail.number} · {customerName(detail.customer_id)} — {detail.title}
                 </DialogTitle>
               </DialogHeader>
-
               <div className="flex flex-wrap gap-2 text-xs">
-                <Badge className={ticketStatusClass(detail.status)}>{ticketStatusLabel(detail.status)}</Badge>
-                <Badge className={ticketPriorityClass(detail.priority)}>{ticketPriorityLabel(detail.priority)}</Badge>
-                {detail.category && <Badge variant="secondary">{detail.category}</Badge>}
+                <Chip className={STATUS_CHIP[detail.status]}>{ticketStatusLabel(detail.status)}</Chip>
+                <Chip className={PRIORITY_CHIP[detail.priority]}>{ticketPriorityLabel(detail.priority)}</Chip>
+                {detail.category && (
+                  <Chip className="border border-border text-muted-foreground">{detail.category}</Chip>
+                )}
                 {detail.assignee_id && (
-                  <Badge variant="outline">Resp.: {assigneeNameMap[detail.assignee_id] ?? detail.assignee_id.slice(0, 8)}</Badge>
+                  <Chip className="border border-border text-muted-foreground">
+                    Resp.: {assigneeNameMap[detail.assignee_id] ?? detail.assignee_id.slice(0, 8)}
+                  </Chip>
                 )}
               </div>
-
               <p className="text-xs text-muted-foreground">
                 Aberto por <strong>{customerName(detail.customer_id)}</strong> · {formatDateTime(detail.created_at)}
               </p>
-
               {detail.description && (
                 <p className="rounded-md border bg-muted/20 p-3 text-sm whitespace-pre-wrap">{detail.description}</p>
               )}
-
               {/* Thread */}
               <div className="space-y-3">
                 {detail.messages.map((msg) => {
@@ -338,7 +361,6 @@ export default function CompanyTicketsPage() {
                   );
                 })}
               </div>
-
               {/* Resposta */}
               <form onSubmit={sendMessage} className="space-y-2 border-t pt-3">
                 <div className="flex items-center gap-2">
@@ -375,7 +397,6 @@ export default function CompanyTicketsPage() {
                   </Button>
                 </div>
               </form>
-
               {/* Gestão */}
               <div className="grid gap-3 border-t pt-3 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -409,7 +430,6 @@ export default function CompanyTicketsPage() {
                   </Button>
                 </div>
               </div>
-
               {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
             </>
           )}

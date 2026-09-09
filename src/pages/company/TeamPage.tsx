@@ -6,7 +6,6 @@ import { useAuth } from '../../context/AuthContext';
 import { PERMISSIONS, PERMISSION_GROUPS } from '../../lib/constants';
 import type { PermissionCode } from '../../lib/constants';
 import type { ChatSector, InviteResponse, Role, RoleList, UserPage, UserRead } from '@/types/api';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import {
@@ -43,6 +42,31 @@ const CHAT_SECTOR_LABELS: Record<ChatSector, string> = {
 };
 const CHAT_SECTORS: ChatSector[] = ['sales', 'commercial', 'financial', 'support', 'service'];
 
+// ── Chips legíveis em Light e Dark (cores explícitas) ─────────────────────────
+function ChipDark({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full bg-foreground px-2 py-0.5 text-xs font-medium text-background ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+function ChipMuted({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+function ChipDestructive({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-white ${className}`}>
+      {children}
+    </span>
+  );
+}
+
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
   return (
     <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -56,9 +80,9 @@ function PageHeading({ title, description, action }: { title: string; descriptio
 }
 
 const statusBadge = (status: string) => {
-  if (status === 'active') return <Badge variant="default">Ativo</Badge>;
-  if (status === 'inactive') return <Badge variant="secondary">Inativo</Badge>;
-  return <Badge variant="destructive">Bloqueado</Badge>;
+  if (status === 'active') return <ChipDark>Ativo</ChipDark>;
+  if (status === 'inactive') return <ChipMuted>Inativo</ChipMuted>;
+  return <ChipDestructive>Bloqueado</ChipDestructive>;
 };
 
 export default function TeamPage() {
@@ -297,7 +321,7 @@ export default function TeamPage() {
                         <div>
                           <p className="text-sm font-medium">
                             {r.name}
-                            {r.is_system && <Badge className="ml-2">Sistema</Badge>}
+                            {r.is_system && <ChipDark className="ml-2">Sistema</ChipDark>}
                           </p>
                           <p className="font-mono text-xs text-muted-foreground">{r.slug}</p>
                           {r.description && <p className="mt-1 text-xs text-muted-foreground">{r.description}</p>}
@@ -410,7 +434,7 @@ export default function TeamPage() {
                 {invites.map((inv) => (
                   <TableRow key={inv.id}>
                     <TableCell className="font-medium">{inv.email}</TableCell>
-                    <TableCell><Badge variant="secondary">{inv.role_slug}</Badge></TableCell>
+                    <TableCell><ChipMuted>{inv.role_slug}</ChipMuted></TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(inv.expires_at).toLocaleDateString('pt-BR')}
                     </TableCell>
@@ -460,19 +484,19 @@ export default function TeamPage() {
                       <TableRow key={u.id}>
                         <TableCell className="font-medium">
                           {u.full_name}
-                          {self && <Badge className="ml-2">Você</Badge>}
+                          {self && <ChipDark className="ml-2">Você</ChipDark>}
                         </TableCell>
                         <TableCell className="text-muted-foreground">{u.email}</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
                             {u.roles.map((slug) => (
-                              <Badge key={slug} variant="secondary">{slug}</Badge>
+                              <ChipMuted key={slug}>{slug}</ChipMuted>
                             ))}
                           </div>
                         </TableCell>
                         <TableCell>
                           {u.chat_sector ? (
-                            <Badge variant="outline">{CHAT_SECTOR_LABELS[u.chat_sector] ?? u.chat_sector}</Badge>
+                            <ChipMuted>{CHAT_SECTOR_LABELS[u.chat_sector] ?? u.chat_sector}</ChipMuted>
                           ) : (
                             <span className="text-xs text-muted-foreground">Todos</span>
                           )}

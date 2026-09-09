@@ -11,7 +11,6 @@ import {
   validateImageFile,
 } from '../../lib/uploads';
 import { formatCurrency } from '../../lib/format';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import {
@@ -38,6 +37,38 @@ const stockInt = (v: number | string | null | undefined): number | null => {
   return Math.max(0, Math.trunc(n));
 };
 
+/* Chips legíveis em Light e Dark (fundo invertido ao foreground). */
+function SkuChip({ sku }: { sku: string }) {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-md bg-foreground px-2 py-0.5 font-mono text-xs font-medium text-background">
+      {sku}
+    </span>
+  );
+}
+
+function StockChip({ value, unit }: { value: number | null; unit?: string | null }) {
+  if (value === null || value === undefined) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-md bg-foreground px-2 py-0.5 text-xs font-medium text-background">
+      {value} {unit ?? 'un'}
+    </span>
+  );
+}
+
+function StatusChip({ active }: { active: boolean }) {
+  return active ? (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-foreground px-2 py-0.5 text-xs font-medium text-background">
+      Ativo
+    </span>
+  ) : (
+    <span className="inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">
+      Inativo
+    </span>
+  );
+}
+
 interface ProductForm {
   sku: string;
   code: string;
@@ -59,7 +90,7 @@ function PageHeading({ title, description, action }: { title: string; descriptio
   return (
     <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
         <p className="mt-1 text-muted-foreground">{description}</p>
       </div>
       {action}
@@ -125,8 +156,8 @@ export default function CatalogPage() {
       setLoading(false);
     }
   }, [page, searchDebounced, categoryFilter]);
-
   useEffect(() => { loadProducts(); }, [loadProducts]);
+
   useEffect(() => () => revokeObjectPreview(preview), [preview]);
 
   const resetForm = () => {
@@ -328,7 +359,6 @@ export default function CatalogPage() {
                   <Label htmlFor="description">Descrição</Label>
                   <Textarea id="description" rows={2} value={form.description} onChange={setField('description')} />
                 </div>
-
                 <div className="rounded-lg border border-dashed p-4 text-center">
                   <input
                     ref={fileRef}
@@ -347,9 +377,7 @@ export default function CatalogPage() {
                   </Button>
                   {imageError && <p role="alert" className="mt-2 text-xs text-destructive">{imageError}</p>}
                 </div>
-
                 {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
-
                 <DialogFooter>
                   <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar'}</Button>
                 </DialogFooter>
@@ -420,11 +448,11 @@ export default function CatalogPage() {
                             <img src={p.image_url} alt={p.name} className="h-10 w-10 rounded object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="flex h-10 w-10 items-center justify-center rounded bg-muted/40">
-                              <Package className="h-5 w-5 text-muted-foreground/40" />
+                              <Package className="h-5 w-5 text-muted-foreground/60" />
                             </div>
                           )}
                           <div>
-                            <p className="font-medium">{p.name}</p>
+                            <p className="font-medium text-foreground">{p.name}</p>
                             {p.code && <p className="text-xs text-muted-foreground">Cód.: {p.code}</p>}
                           </div>
                         </div>
@@ -432,14 +460,16 @@ export default function CatalogPage() {
                       <TableCell className="text-muted-foreground">
                         {categories.find((c) => c.id === p.category_id)?.name ?? '—'}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{p.sku}</TableCell>
-                      <TableCell>{formatCurrency(Number(p.price))}</TableCell>
-                      {/* ✅ Estoque inteiro */}
-                      <TableCell>{p.stock === null || p.stock === undefined ? '—' : `${stockInt(p.stock)} ${p.unit ?? 'un'}`}</TableCell>
                       <TableCell>
-                        <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
-                          {p.status === 'active' ? 'Ativo' : 'Inativo'}
-                        </Badge>
+                        <SkuChip sku={p.sku} />
+                      </TableCell>
+                      <TableCell className="text-foreground">{formatCurrency(Number(p.price))}</TableCell>
+                      {/* ✅ Estoque inteiro (contraste Light/Dark) */}
+                      <TableCell>
+                        <StockChip value={stockInt(p.stock)} unit={p.unit} />
+                      </TableCell>
+                      <TableCell>
+                        <StatusChip active={p.status === 'active'} />
                       </TableCell>
                       <TableCell className="text-right">
                         <Button size="icon" variant="ghost" onClick={() => openEdit(p)} aria-label={`Editar ${p.name}`}>
@@ -524,7 +554,6 @@ export default function CatalogPage() {
                 <Label htmlFor="edit-description">Descrição</Label>
                 <Textarea id="edit-description" rows={2} value={form.description} onChange={setField('description')} />
               </div>
-
               <div className="rounded-lg border border-dashed p-4 text-center">
                 <input
                   ref={fileRef}
@@ -545,9 +574,7 @@ export default function CatalogPage() {
                 </Button>
                 {imageError && <p role="alert" className="mt-2 text-xs text-destructive">{imageError}</p>}
               </div>
-
               {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
-
               <DialogFooter>
                 <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Salvar alterações'}</Button>
               </DialogFooter>
