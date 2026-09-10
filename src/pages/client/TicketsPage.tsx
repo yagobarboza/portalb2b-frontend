@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, Paperclip, Plus, Send, Ticket as TicketIcon,
+  ArrowLeft, Inbox, Paperclip, Plus, Send, Ticket as TicketIcon,
 } from 'lucide-react';
 import {
   createTicket, getTicket, listTickets, sendTicketMessage, uploadTicketAttachment,
 } from '../../lib/ticketsApi';
-import { ChatAttachment } from '../../components/chat/ChatAttachment'; // ✅ substitui getAttachmentUrl
+import { useAuth } from '../../context/AuthContext';
+import { useBranding } from '../../lib/useBranding';
+import { ChatAttachment } from '../../components/chat/ChatAttachment';
 import { ticketPriorityLabel, ticketStatusLabel } from '../../lib/ticketStatus';
 import { formatDateTime, formatDate } from '../../lib/format';
+import { cn } from '../../lib/utils';
 import type {
   Ticket, TicketDetail, TicketPriority, TicketStatus,
 } from '@/types/api';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
+import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
@@ -27,12 +30,17 @@ import {
 
 const PRIORITIES: TicketPriority[] = ['low', 'medium', 'high', 'urgent'];
 const CATEGORIES = ['Suporte técnico', 'Comercial', 'Financeiro', 'Cadastro', 'Outro'];
-
 /** Ticket fechado/resolvido → cliente não pode mais enviar mensagens/anexos. */
 const isClosedForClient = (status: TicketStatus) =>
   status === 'resolved' || status === 'closed';
 
 export default function ClientTicketsPage() {
+  const { user } = useAuth();
+  const { branding } = useBranding();
+  // ✅ Inicial REAL do cliente logado e da empresa (com fallback seguro).
+  const myInitial = (user?.full_name?.trim() || 'V').charAt(0).toUpperCase();
+  const supportInitial = (branding?.name?.trim() || 'S').charAt(0).toUpperCase();
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -61,7 +69,6 @@ export default function ClientTicketsPage() {
       setLoading(false);
     }
   }, [page]);
-
   useEffect(() => { load(); }, [load]);
 
   const openTicket = async (t: Ticket) => {
@@ -142,112 +149,14 @@ export default function ClientTicketsPage() {
   };
 
   const closed = selected ? isClosedForClient(selected.status) : false;
+  const needsAttention = (t: Ticket) => t.status === 'open' || t.status === 'awaiting_company';
 
-  // ── Detalhe (cara de e-mail/thread) ──
-  if (selected) {
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-8">
-        <div className="mb-4 flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Voltar">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-xl font-bold">{selected.title}</h1>
-            <p className="text-xs text-muted-foreground">
-              #{selected.number} · {formatDateTime(selected.created_at)}
-            </p>
-          </div>
-          <Badge>{ticketStatusLabel(selected.status)}</Badge>
-        </div>
-
-        <Card className="overflow-hidden">
-          <div className="border-b bg-muted/30 px-4 py-3 text-sm">
-            <p>
-              <span className="text-muted-foreground">Status: </span>
-              <strong>{ticketStatusLabel(selected.status)}</strong>
-            </p>
-            <p>
-              <span className="text-muted-foreground">Prioridade: </span>
-              <strong>{ticketPriorityLabel(selected.priority)}</strong>
-            </p>
-            {selected.category && (
-              <p>
-                <span className="text-muted-foreground">Categoria: </span>
-                <strong>{selected.category}</strong>
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-4 px-4 py-4">
-            {selected.messages.length === 0 && (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                Nenhuma mensagem ainda.
-              </p>
-            )}
-            {selected.messages.map((m) => {
-              const mine = !m.author_user_id;
-              return (
-                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-lg border px-3 py-2 ${mine ? 'bg-primary/10' : 'bg-muted/30'}`}>
-                    <p className="mb-1 text-xs font-medium text-muted-foreground">
-                      {mine ? 'Você' : 'Suporte'} · {formatDateTime(m.created_at)}
-                    </p>
-                    <p className="text-sm whitespace-pre-wrap">{m.content}</p>
-                    {/* ✅ Anexo: imagem/vídeo inline; demais → download direto */}
-                    {m.attachment_file_id && <ChatAttachment fileId={m.attachment_file_id} />}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {closed ? (
-            <p className="border-t bg-muted/20 px-4 py-4 text-center text-sm text-muted-foreground">
-              📌 Este ticket foi encerrado. Não é possível enviar novas mensagens.
-            </p>
-          ) : (
-            <form onSubmit={handleSend} className="space-y-2 border-t p-4">
-              {pendingFile && (
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Paperclip className="h-3 w-3" /> {pendingFile.name}
-                </p>
-              )}
-              <Textarea
-                rows={2}
-                maxLength={4000}
-                placeholder="Escreva sua resposta…"
-                value={newMsg}
-                onChange={(e) => setNewMsg(e.target.value)}
-              />
-              <div className="flex items-center gap-2">
-                <input
-                  ref={attachRef}
-                  type="file"
-                  className="hidden"
-                  onChange={pickFile}
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                />
-                <Button type="button" variant="outline" size="icon" aria-label="Anexar arquivo" disabled={sending} onClick={() => attachRef.current?.click()}>
-                  <Paperclip className="h-4 w-4" />
-                </Button>
-                <Button type="submit" disabled={!newMsg.trim() || sending} className="ml-auto">
-                  <Send className="mr-2 h-4 w-4" />{sending ? 'Enviando…' : 'Responder'}
-                </Button>
-              </div>
-            </form>
-          )}
-        </Card>
-      </div>
-    );
-  }
-
-  // ── Lista ──
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8">
-      <div className="mb-8 flex items-center justify-between">
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Tickets de Suporte</h1>
-          <p className="mt-1 text-muted-foreground">
+          <h1 className="text-2xl font-bold tracking-tight">Tickets de Suporte</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Acompanhe e abra solicitações de suporte ({total} no total).
           </p>
         </div>
@@ -258,46 +167,229 @@ export default function ClientTicketsPage() {
 
       {loading ? (
         <p className="py-16 text-center text-muted-foreground">Carregando…</p>
-      ) : tickets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <TicketIcon className="mb-4 h-16 w-16 text-muted-foreground/30" />
-          <h3 className="text-lg font-semibold text-muted-foreground">Nenhum ticket</h3>
-          <p className="mt-1 text-sm text-muted-foreground/70">
-            Crie um ticket para obter suporte.
-          </p>
-        </div>
       ) : (
-        <div className="space-y-3">
-          {tickets.map((t) => (
-            <Card key={t.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => openTicket(t)}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-muted-foreground">#{t.number}</span>
-                      <h3 className="truncate font-semibold">{t.title}</h3>
+        <div className="grid items-start gap-4 lg:grid-cols-[340px_1fr]">
+          {/* ── Lista (caixa de entrada) ── */}
+          <Card
+            className={cn(
+              'flex max-h-[45vh] flex-col overflow-hidden lg:sticky lg:top-20 lg:max-h-[calc(100vh-8rem)]',
+              selected ? 'hidden lg:flex' : 'flex',
+            )}
+          >
+            <div className="flex items-center justify-between border-b px-3 py-2">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <Inbox className="h-4 w-4" />Caixa de entrada
+              </p>
+              <span className="text-xs text-muted-foreground">{total} ticket(s)</span>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {tickets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-14 text-center">
+                  <TicketIcon className="mb-2 h-10 w-10 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground">Nenhum ticket criado.</p>
+                </div>
+              ) : (
+                <ul className="divide-y">
+                  {tickets.map((t) => {
+                    const attention = needsAttention(t);
+                    const active = selected?.id === t.id;
+                    return (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          onClick={() => openTicket(t)}
+                          className={cn(
+                            'w-full px-3 py-2.5 text-left transition-colors hover:bg-muted/30',
+                            active && 'bg-muted/40',
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                              {supportInitial}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <p className={cn('truncate text-sm', attention ? 'font-semibold' : 'text-muted-foreground')}>
+                                  Suporte
+                                </p>
+                                <span className="shrink-0 text-[11px] text-muted-foreground">{formatDate(t.updated_at)}</span>
+                              </div>
+                              <p className={cn('truncate text-sm leading-tight', attention && 'font-semibold')}>{t.title}</p>
+                              <div className="mt-0.5 flex items-center gap-1.5">
+                                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.description}</span>
+                                <Badge variant={attention ? 'default' : 'outline'} className="shrink-0">
+                                  {ticketStatusLabel(t.status)}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            {pages > 1 && (
+              <div className="flex items-center justify-between border-t px-3 py-1.5">
+                <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
+                  <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* ── Leitura (e-mail) ── */}
+          <Card className={cn('flex flex-col', selected ? 'flex' : 'hidden lg:flex')}>
+            {selected ? (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-2 border-b px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="-ml-2 h-8 w-8 lg:hidden"
+                        onClick={() => setSelected(null)}
+                        aria-label="Voltar"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                      </Button>
+                      <h2 className="truncate text-base font-bold">{selected.title}</h2>
                     </div>
-                    <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{t.description}</p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <Badge>{ticketStatusLabel(t.status)}</Badge>
-                      <Badge variant="outline">{ticketPriorityLabel(t.priority)}</Badge>
-                      <span className="ml-auto text-xs text-muted-foreground">{formatDate(t.updated_at)}</span>
-                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      #{selected.number} · {formatDateTime(selected.created_at)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline">{ticketPriorityLabel(selected.priority)}</Badge>
+                    {selected.category && <Badge variant="outline">{selected.category}</Badge>}
+                    <Badge>{ticketStatusLabel(selected.status)}</Badge>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
 
-      {pages > 1 && (
-        <div className="mt-6 flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
-            <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
-          </div>
+                <div className="border-b bg-muted/20 px-4 py-1.5 text-[11px] text-muted-foreground">
+                  <span><span className="font-medium">De:</span> <strong>Suporte</strong></span>
+                  <span className="mx-2 text-muted-foreground/40">|</span>
+                  <span><span className="font-medium">Para:</span> <strong>Você</strong></span>
+                </div>
+
+                {selected.description && (
+                  <div className="border-b px-4 py-2.5">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                      {selected.description}
+                    </p>
+                  </div>
+                )}
+
+                {/* ── Thread: mensagens diferenciadas por autor (chat) ── */}
+                <div className="flex-1 space-y-3 p-3">
+                  {selected.messages.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma mensagem ainda.</p>
+                  ) : (
+                    selected.messages.map((m) => {
+                      const mine = !m.author_user_id;
+                      return (
+                        <div
+                          key={m.id}
+                          className={cn(
+                            'flex items-end gap-2',
+                            mine ? 'flex-row-reverse' : '',
+                          )}
+                        >
+                          {/* Avatar com inicial REAL (quem enviou) */}
+                          <div
+                            className={cn(
+                              'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                              mine
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted text-muted-foreground ring-1 ring-border',
+                            )}
+                          >
+                            {mine ? myInitial : supportInitial}
+                          </div>
+
+                          {/* Balão */}
+                          <div
+                            className={cn(
+                              'max-w-[80%] rounded-2xl border px-3.5 py-2',
+                              mine
+                                ? 'rounded-br-sm border-primary/25 bg-primary text-primary-foreground'
+                                : 'rounded-bl-sm border-border bg-muted/40',
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                'mb-0.5 flex items-baseline justify-between gap-2 text-[11px]',
+                                mine ? 'text-primary-foreground/80' : 'text-muted-foreground',
+                              )}
+                            >
+                              <span className="font-bold uppercase tracking-wide">
+                                {mine ? 'Você' : 'Suporte'}
+                              </span>
+                              <span className="shrink-0">{formatDateTime(m.created_at)}</span>
+                            </div>
+                            <p
+                              className={cn(
+                                'whitespace-pre-wrap text-sm leading-relaxed',
+                                mine ? 'text-primary-foreground' : '',
+                              )}
+                            >
+                              {m.content}
+                            </p>
+                            {m.attachment_file_id && <ChatAttachment fileId={m.attachment_file_id} />}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {closed ? (
+                  <p className="border-t bg-muted/20 px-4 py-3 text-center text-sm text-muted-foreground">
+                    📌 Este ticket foi encerrado. Não é possível enviar novas mensagens.
+                  </p>
+                ) : (
+                  <form onSubmit={handleSend} className="space-y-1.5 border-t p-3">
+                    {pendingFile && (
+                      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Paperclip className="h-3 w-3" /> {pendingFile.name}
+                      </p>
+                    )}
+                    <Textarea
+                      rows={2}
+                      maxLength={4000}
+                      placeholder="Escreva sua resposta…"
+                      value={newMsg}
+                      onChange={(e) => setNewMsg(e.target.value)}
+                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={attachRef}
+                        type="file"
+                        className="hidden"
+                        onChange={pickFile}
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
+                      />
+                      <Button type="button" variant="outline" size="icon" aria-label="Anexar arquivo" disabled={sending} onClick={() => attachRef.current?.click()}>
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                      <Button type="submit" disabled={!newMsg.trim() || sending} className="ml-auto">
+                        <Send className="mr-2 h-4 w-4" />{sending ? 'Enviando…' : 'Responder'}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
+                <Inbox className="mb-3 h-10 w-10 text-muted-foreground/40" />
+                <p className="text-sm font-medium text-muted-foreground">Selecione um ticket para ler</p>
+              </div>
+            )}
+          </Card>
         </div>
       )}
 

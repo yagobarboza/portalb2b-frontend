@@ -27,9 +27,11 @@ type PeriodKey = 'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all';
 /** Início do dia (00:00:00.000) no FUSO DO NAVEGADOR. */
 const startOfDay = (d: Date) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+
 /** Fim do dia (23:59:59.999) no FUSO DO NAVEGADOR. */
 const endOfDay = (d: Date) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+
 /** Converte 'YYYY-MM-DD' para Date local (evita o shift de UTC do new Date(str)). */
 const parseLocalDate = (isoDate: string) => {
   const [y, m, d] = isoDate.split('-').map(Number);
@@ -45,19 +47,15 @@ export default function CompanyOrdersPage() {
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | OrderStatus>('all');
-
   // ✅ Filtro por período — PADRÃO: pedidos do DIA.
   const [filterPeriod, setFilterPeriod] = useState<PeriodKey>('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-
   // ✅ BUG 6: mapas de nomes (cliente + produto).
   const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
   const [productMap, setProductMap] = useState<Record<string, string>>({});
-
   // Detalhe de itens
   const [detail, setDetail] = useState<Order | null>(null);
-
   // Transição de status
   const [transitionTarget, setTransitionTarget] = useState<Order | null>(null);
   const [transitionTo, setTransitionTo] = useState<OrderStatus | null>(null);
@@ -90,8 +88,6 @@ export default function CompanyOrdersPage() {
   }, []);
 
   // ✅ Converte o período escolhido no intervalo UTC (ISO 8601) enviado à API.
-  // "Hoje" = 00:00:00 → 23:59:59 do dia atual NO FUSO DO NAVEGADOR, convertido
-  // para UTC — assim o dia fecha corretamente para qualquer empresa do Brasil.
   const dateParams = useMemo(() => {
     const now = new Date();
     switch (filterPeriod) {
@@ -154,7 +150,6 @@ export default function CompanyOrdersPage() {
       setLoading(false);
     }
   }, [page, filterStatus, searchDebounced, dateParams]);
-
   useEffect(() => { load(); }, [load]);
 
   const kpis = useMemo(() => {
@@ -214,14 +209,15 @@ export default function CompanyOrdersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      {/* ✅ KPI — no máximo 3 colunas + nowrap: valor sempre em UMA linha, sem cortar */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {kpis.map((k) => (
           <Card key={k.label}>
             <CardContent className="flex items-center gap-4 p-5">
-              <div className={`rounded-xl p-3 ${k.tone}`}><k.icon className="h-5 w-5" /></div>
-              <div className="min-w-0">
-                <p className="truncate text-sm text-muted-foreground">{k.label}</p>
-                <p className="truncate text-xl font-bold">{k.value}</p>
+              <div className={`shrink-0 rounded-xl p-3 ${k.tone}`}><k.icon className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1">
+                <p className="whitespace-nowrap text-sm text-muted-foreground">{k.label}</p>
+                <p className="whitespace-nowrap text-xl font-bold leading-tight tabular-nums">{k.value}</p>
               </div>
             </CardContent>
           </Card>
@@ -239,7 +235,6 @@ export default function CompanyOrdersPage() {
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
-
         {/* ✅ Período — padrão "Hoje" */}
         <div className="w-full sm:w-44">
           <Select
@@ -257,7 +252,6 @@ export default function CompanyOrdersPage() {
             </SelectContent>
           </Select>
         </div>
-
         {/* ✅ Período personalizado: intervalo de datas */}
         {filterPeriod === 'custom' && (
           <div className="flex items-center gap-2">
@@ -280,7 +274,6 @@ export default function CompanyOrdersPage() {
             />
           </div>
         )}
-
         <div className="w-full sm:w-56">
           <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v as 'all' | OrderStatus); setPage(1); }}>
             <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>

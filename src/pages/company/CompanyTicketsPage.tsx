@@ -1,35 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'; // ✅ useRef adicionado
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Paperclip, Search, Send, TicketIcon, UserCog } from 'lucide-react'; // ✅ ArrowLeft removido
+import { ArrowLeft, Inbox, Paperclip, Search, Send, TicketIcon, UserCog } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api, ApiError } from '../../lib/api';
 import {
   assignTicket, getTicket, listTickets,
   sendTicketMessage, updateTicketStatus, uploadTicketAttachment,
 } from '../../lib/ticketsApi';
-import { ChatAttachment } from '../../components/chat/ChatAttachment'; // ✅ substitui getAttachmentUrl
+import { ChatAttachment } from '../../components/chat/ChatAttachment';
 import {
   ticketPriorityLabel, ticketStatusLabel,
 } from '../../lib/ticketStatus';
 import { formatDateTime } from '../../lib/format';
+import { cn } from '../../lib/utils';
 import type {
   CustomerPage, Ticket, TicketDetail, TicketPriority, TicketStatus, UserPage,
 } from '@/types/api';
 import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
+import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from '../../components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../components/ui/select';
 
 const PAGE_SIZE = 20;
-
-// Ticket com o nome do responsável (agora enviado pelo backend).
+/** Ticket com o nome do responsável (agora enviado pelo backend). */
 type TicketDetailWithName = TicketDetail & { assignee_name?: string | null };
 type TicketWithName = Ticket & { assignee_name?: string | null };
 
@@ -42,7 +39,6 @@ const STATUS_CHIP: Record<TicketStatus, string> = {
   resolved: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-100',
   closed: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100',
 };
-
 const PRIORITY_CHIP: Record<TicketPriority, string> = {
   low: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100',
   medium: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-100',
@@ -60,6 +56,9 @@ function Chip({ className, children }: { className?: string; children: React.Rea
 
 export default function CompanyTicketsPage() {
   const { user } = useAuth();
+  // ✅ Inicial REAL do usuário da empresa logado (fallback seguro).
+  const myInitial = (user?.full_name?.trim() || 'E').charAt(0).toUpperCase();
+
   const [tickets, setTickets] = useState<TicketWithName[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -109,7 +108,6 @@ export default function CompanyTicketsPage() {
     return map;
   }, [assignees]);
 
-  // ✅ Nome do responsável: backend primeiro, depois mapa local, nunca UUID cru.
   const assigneeLabel = (t: { assignee_id?: string | null; assignee_name?: string | null }) => {
     if (!t.assignee_id) return '—';
     return t.assignee_name ?? assigneeNameMap[t.assignee_id] ?? '—';
@@ -227,10 +225,10 @@ export default function CompanyTicketsPage() {
   }, [tickets, searchDebounced, customerMap]);
 
   const customerName = (id?: string | null) => (id ? customerMap[id] ?? id.slice(0, 8) : '—');
+  const needsAttention = (t: Ticket) => t.status !== 'resolved' && t.status !== 'closed';
 
   return (
     <div className="space-y-4">
-      {/* Cabeçalho com total */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Tickets</h1>
         <p className="text-sm text-muted-foreground">
@@ -238,7 +236,6 @@ export default function CompanyTicketsPage() {
         </p>
       </div>
 
-      {/* Filtros */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -273,122 +270,219 @@ export default function CompanyTicketsPage() {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          {loading ? (
-            <p className="py-10 text-center text-muted-foreground">Carregando…</p>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <TicketIcon className="mb-3 h-10 w-10 text-muted-foreground/50" />
-              <h3 className="text-lg font-semibold text-muted-foreground">Nenhum chamado encontrado</h3>
-            </div>
-          ) : (
-            <ul className="divide-y">
-              {filtered.map((t) => (
-                <li key={t.id}>
-                  <button
-                    type="button"
-                    className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/30"
-                    onClick={() => openTicket(t)}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs text-muted-foreground">#{t.number}</span>
-                          <span className="truncate font-medium">{t.title}</span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {customerName(t.customer_id)} · {formatDateTime(t.updated_at)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {t.assignee_id && (
-                          <Chip className="border border-border text-muted-foreground">
-                            Resp.: {assigneeLabel(t)}
-                          </Chip>
-                        )}
-                        <Chip className={STATUS_CHIP[t.status]}>{ticketStatusLabel(t.status)}</Chip>
-                        <Chip className={PRIORITY_CHIP[t.priority]}>{ticketPriorityLabel(t.priority)}</Chip>
-                      </div>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
+      <div className="grid items-start gap-4 lg:grid-cols-[340px_1fr]">
+        {/* ── Lista (caixa de entrada) ── */}
+        <Card
+          className={cn(
+            'flex max-h-[45vh] flex-col overflow-hidden lg:sticky lg:top-20 lg:max-h-[calc(100vh-8rem)]',
+            detail ? 'hidden lg:flex' : 'flex',
           )}
-        </CardContent>
-      </Card>
-
-      {pages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
-            <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
+        >
+          <div className="flex items-center justify-between border-b px-3 py-2">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <Inbox className="h-4 w-4" />Caixa de entrada
+            </p>
+            <span className="text-xs text-muted-foreground">{filtered.length} chamado(s)</span>
           </div>
-        </div>
-      )}
-
-      {/* Detalhe — visual e-mail */}
-      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) { setDetail(null); setActionError(null); } }}>
-        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
-          {detail && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-base">
-                  #{detail.number} · {customerName(detail.customer_id)} — {detail.title}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Chip className={STATUS_CHIP[detail.status]}>{ticketStatusLabel(detail.status)}</Chip>
-                <Chip className={PRIORITY_CHIP[detail.priority]}>{ticketPriorityLabel(detail.priority)}</Chip>
-                {detail.category && (
-                  <Chip className="border border-border text-muted-foreground">{detail.category}</Chip>
-                )}
-                {detail.assignee_id && (
-                  <Chip className="border border-border text-muted-foreground">
-                    Resp.: {assigneeLabel(detail)}
-                  </Chip>
-                )}
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <p className="py-10 text-center text-muted-foreground">Carregando…</p>
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-14 text-center">
+                <TicketIcon className="mb-2 h-10 w-10 text-muted-foreground/50" />
+                <p className="text-sm text-muted-foreground">Nenhum chamado encontrado.</p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Aberto por <strong>{customerName(detail.customer_id)}</strong> · {formatDateTime(detail.created_at)}
-              </p>
-              {detail.description && (
-                <p className="rounded-md border bg-muted/20 p-3 text-sm whitespace-pre-wrap">{detail.description}</p>
-              )}
-              {/* Thread */}
-              <div className="space-y-3">
-                {detail.messages.map((msg) => {
-                  let author = 'Equipe';
-                  if (msg.author_customer_id) author = customerName(msg.author_customer_id);
-                  else if (msg.author_user_id) author = msg.author_user_id === user?.id ? 'Você' : assigneeNameMap[msg.author_user_id] ?? 'Equipe';
+            ) : (
+              <ul className="divide-y">
+                {filtered.map((t) => {
+                  const attention = needsAttention(t);
+                  const active = detail?.id === t.id;
                   return (
-                    <div key={msg.id} className={`rounded-md border p-3 ${msg.is_internal ? 'bg-amber-50 dark:bg-amber-950/30' : 'bg-muted/30'}`}>
-                      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                        <span className="font-medium">{msg.is_internal ? '🔒 Nota interna' : author}</span>
-                        <span>{formatDateTime(msg.created_at)}</span>
-                      </div>
-                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      {/* ✅ Anexo: imagem/vídeo inline; demais → download direto */}
-                      {msg.attachment_file_id && <ChatAttachment fileId={msg.attachment_file_id} />}
-                    </div>
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        onClick={() => openTicket(t)}
+                        className={cn(
+                          'w-full px-3 py-2.5 text-left transition-colors hover:bg-muted/30',
+                          active && 'bg-muted/40',
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                            {customerName(t.customer_id).charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <p className={cn('truncate text-sm', attention ? 'font-semibold' : 'text-muted-foreground')}>
+                                {customerName(t.customer_id)}
+                              </p>
+                              <span className="shrink-0 text-[11px] text-muted-foreground">{formatDateTime(t.updated_at)}</span>
+                            </div>
+                            <p className={cn('truncate text-sm leading-tight', attention && 'font-semibold')}>{t.title}</p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.description}</span>
+                              <Chip className={STATUS_CHIP[t.status]}>{ticketStatusLabel(t.status)}</Chip>
+                              <Chip className={PRIORITY_CHIP[t.priority]}>{ticketPriorityLabel(t.priority)}</Chip>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    </li>
                   );
                 })}
+              </ul>
+            )}
+          </div>
+          {pages > 1 && (
+            <div className="flex items-center justify-between border-t px-3 py-1.5">
+              <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
+                <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
               </div>
-              {/* Resposta */}
-              <form onSubmit={sendMessage} className="space-y-2 border-t pt-3">
-                <div className="flex items-center gap-2">
-                  <Label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-input"
-                      checked={isInternal}
-                      onChange={(e) => setIsInternal(e.target.checked)}
-                    />
-                    Nota interna (só a equipe vê)
-                  </Label>
+            </div>
+          )}
+        </Card>
+
+        {/* ── Leitura (e-mail) ── */}
+        <Card className={cn('flex flex-col', detail ? 'flex' : 'hidden lg:flex')}>
+          {detail ? (
+            <>
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b px-4 py-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="-ml-2 h-8 w-8 lg:hidden"
+                      onClick={() => setDetail(null)}
+                      aria-label="Voltar"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                    </Button>
+                    <h2 className="truncate text-base font-bold">#{detail.number} · {detail.title}</h2>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Aberto em {formatDateTime(detail.created_at)}
+                  </p>
                 </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Chip className={STATUS_CHIP[detail.status]}>{ticketStatusLabel(detail.status)}</Chip>
+                  <Chip className={PRIORITY_CHIP[detail.priority]}>{ticketPriorityLabel(detail.priority)}</Chip>
+                  {detail.category && (
+                    <Chip className="border border-border text-muted-foreground">{detail.category}</Chip>
+                  )}
+                  {detail.assignee_id && (
+                    <Chip className="border border-border text-muted-foreground">
+                      Resp.: {assigneeLabel(detail)}
+                    </Chip>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-b bg-muted/20 px-4 py-1.5 text-[11px] text-muted-foreground">
+                <span><span className="font-medium">De:</span> <strong>{customerName(detail.customer_id)}</strong></span>
+                <span className="mx-2 text-muted-foreground/40">|</span>
+                <span><span className="font-medium">Para:</span> <strong>Equipe de atendimento</strong></span>
+              </div>
+
+              {detail.description && (
+                <div className="border-b px-4 py-2.5">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                    {detail.description}
+                  </p>
+                </div>
+              )}
+
+              {/* ── Thread: mensagens diferenciadas por autor (chat) ── */}
+              <div className="flex-1 space-y-3 p-3">
+                {detail.messages.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma mensagem ainda.</p>
+                ) : (
+                  detail.messages.map((msg) => {
+                    const isInternal = msg.is_internal;
+                    const isMine = Boolean(msg.author_user_id && msg.author_user_id === user?.id);
+                    const isCustomer = Boolean(msg.author_customer_id);
+                    const alignRight = !isCustomer && !isInternal;
+                    const author =
+                      isInternal ? '🔒 Nota interna' :
+                      isMine ? 'Você' :
+                      isCustomer ? customerName(msg.author_customer_id) :
+                      msg.author_user_id ? (assigneeNameMap[msg.author_user_id] ?? 'Equipe') : 'Equipe';
+                    const avatarLetter =
+                      isInternal ? '🔒' :
+                      isCustomer ? customerName(msg.author_customer_id).charAt(0).toUpperCase() :
+                      myInitial; // ✅ inicial REAL do usuário da empresa
+                    return (
+                      <div
+                        key={msg.id}
+                        className={cn(
+                          'flex items-end gap-2',
+                          alignRight && 'flex-row-reverse',
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                            isInternal
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                              : alignRight
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted text-muted-foreground ring-1 ring-border',
+                          )}
+                        >
+                          {avatarLetter}
+                        </div>
+
+                        <div
+                          className={cn(
+                            'max-w-[80%] rounded-2xl border px-3.5 py-2',
+                            isInternal
+                              ? 'rounded-bl-sm border-amber-300/60 bg-amber-50 dark:bg-amber-950/30'
+                              : alignRight
+                                ? 'rounded-br-sm border-primary/25 bg-primary text-primary-foreground'
+                                : 'rounded-bl-sm border-border bg-muted/40',
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'mb-0.5 flex items-baseline justify-between gap-2 text-[11px]',
+                              isInternal
+                                ? 'text-amber-700 dark:text-amber-300'
+                                : alignRight ? 'text-primary-foreground/80' : 'text-muted-foreground',
+                            )}
+                          >
+                            <span className="font-bold uppercase tracking-wide">{author}</span>
+                            <span className="shrink-0">{formatDateTime(msg.created_at)}</span>
+                          </div>
+                          <p
+                            className={cn(
+                              'whitespace-pre-wrap text-sm leading-relaxed',
+                              isInternal
+                                ? 'text-amber-900 dark:text-amber-100'
+                                : alignRight ? 'text-primary-foreground' : '',
+                            )}
+                          >
+                            {msg.content}
+                          </p>
+                          {msg.attachment_file_id && <ChatAttachment fileId={msg.attachment_file_id} />}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <form onSubmit={sendMessage} className="space-y-1.5 border-t p-3">
+                <Label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-input"
+                    checked={isInternal}
+                    onChange={(e) => setIsInternal(e.target.checked)}
+                  />
+                  Nota interna (só a equipe vê)
+                </Label>
                 <Textarea
                   rows={2}
                   maxLength={4000}
@@ -412,8 +506,8 @@ export default function CompanyTicketsPage() {
                   </Button>
                 </div>
               </form>
-              {/* Gestão */}
-              <div className="grid gap-3 border-t pt-3 sm:grid-cols-2">
+
+              <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="t-status">Alterar status</Label>
                   <Select value={newStatus || 'none'} onValueChange={(v) => setNewStatus(v === 'none' ? '' : (v as TicketStatus))}>
@@ -445,11 +539,16 @@ export default function CompanyTicketsPage() {
                   </Button>
                 </div>
               </div>
-              {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
+              {actionError && <p role="alert" className="px-4 pb-3 text-sm text-destructive">{actionError}</p>}
             </>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center py-16 text-center">
+              <Inbox className="mb-3 h-10 w-10 text-muted-foreground/40" />
+              <p className="text-sm font-medium text-muted-foreground">Selecione um chamado para ler</p>
+            </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </Card>
+      </div>
     </div>
   );
 }
