@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, Minus, Package, Plus, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, Minus, Package, Percent, Plus, ShoppingCart } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { isSafeImageUrl } from '../../lib/uploads';
 import { formatCurrency } from '../../lib/format';
 import { hasHtml, sanitizeHtml } from '../../lib/sanitize';
-import type { Product } from '@/types/api';
+import type { Product, QuantityTier } from '@/types/api';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
+
 /** Product + preço calculado (GET /catalog/products/{id} — backend enriquece). */
 type ProductDetail = Product & {
   customer_price?: number | null;
@@ -27,11 +28,39 @@ const stockOf = (p: Product | null | undefined): number => {
   return Math.max(0, Math.trunc(v));
 };
 
+/**
+ * Preço unitário aplicando a faixa de desconto por quantidade.
+ * Modelo VOLUME: a faixa atingida vale para TODAS as unidades.
+ * (Prévia visual — o preço oficial é sempre o do servidor no carrinho.)
+ */
+function unitPriceForQty(basePrice: number, qty: number, tiers: QuantityTier[]): number {
+  if (tiers.length === 0 || qty < 1) return basePrice;
+  const applicable = tiers
+    .filter((t) => qty >= t.min_quantity)
+    .sort((a, b) => b.min_quantity - a.min_quantity)[0];
+  if (!applicable) return basePrice;
+  const off =
+    applicable.discount_type === 'percent'
+      ? basePrice * (Number(applicable.discount_value) / 100)
+      : Number(applicable.discount_value);
+  return Math.max(0, basePrice - off);
+}
+
 /** Selo "Preço especial" — legível em Light e Dark (fundo invertido). */
 function SpecialBadge() {
   return (
     <span className="inline-flex shrink-0 items-center rounded-full bg-foreground px-2 py-0.5 text-xs font-semibold text-background">
       Preço especial
+    </span>
+  );
+}
+
+/** Selo "Desconto por quantidade" — destacado quando a faixa foi atingida. */
+function QuantityBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-600/40 bg-emerald-600/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+      <Percent className="h-3 w-3" />
+      Desconto por quantidade
     </span>
   );
 }
@@ -43,6 +72,7 @@ export default function ProductPage() {
   const { addItem, registerProduct } = useCart();
 
   const [product, setProduct] = useState<ProductDetail | null>(null);
+  const [tiers, setTiers] = useState<QuantityTier[]>([]);
   const [loading, setLoading] = useState(true);
   const [qty, setQty] = useState(1);
   const [adding, setAdding] = useState(false);
@@ -58,6 +88,7 @@ export default function ProductPage() {
       });
       setProduct(data);
       registerProduct(data);
+      setTiers(data.quantity_discounts ?? []);
       setQty(1);
       setAdded(false);
     } catch (err) {
@@ -76,6 +107,11 @@ export default function ProductPage() {
   const isSpecial =
     product?.price_source === 'customer' && final > 0 && Math.abs(final - base) > 0.001;
   const hasRichText = product?.description ? hasHtml(product.description) : false;
+
+  // ✅ Preço unitário já considerando a faixa de desconto da quantidade escolhida.
+  const unitForQty = unitPriceForQty(final, qty, tiers);
+  const showFromPrice = base - unitForQty > 0.001; // há desconto (negociado e/ou por quantidade)
+  const tierApplied = tiers.length > 0 && unitForQty < final - 0.001; // faixa atingida agora
 
   const handleAdd = async () => {
     if (!product || adding) return;
@@ -138,22 +174,60 @@ export default function ProductPage() {
 
             {/* Preço */}
             <div className="rounded-md border p-4">
-              {isSpecial ? (
-                <div>
-                  <p className="text-sm text-muted-foreground line-through">
-                    De {formatCurrency(base)}
-                  </p>
-                  <p className="text-3xl font-bold">
-                    Por {formatCurrency(final)}
-                  </p>
-                  <div className="mt-2">
-                    <SpecialBadge />
-                  </div>
+              {showFromPrice ? (
+                <p className="text-sm text-muted-foreground line-through">
+                  De {formatCurrency(base)}
+                </p>
+              ) : null}
+              <p className="text-3xl font-bold">
+                {showFromPrice ? `Por ${formatCurrency(unitForQty)}` : formatCurrency(unitForQty)}
+                {qty > 1 && (
+                  <span className="ml-2 text-base font-medium text-muted-foreground">
+                    × {qty} = {formatCurrency(unitForQty * qty)}
+                  </span>
+                )}
+              </p>
+              {(isSpecial || tierApplied) && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {isSpecial && <SpecialBadge />}
+                  {tierApplied && <QuantityBadge />}
                 </div>
-              ) : (
-                <p className="text-3xl font-bold">{formatCurrency(base)}</p>
               )}
             </div>
+
+            {/* ✅ Tabela de faixas de desconto por quantidade */}
+            {tiers.length > 0 && (
+              <div className="rounded-md border p-3">
+                <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <Percent className="h-4 w-4" />
+                  Descontos por quantidade
+                </p>
+                <ul className="space-y-1 text-sm">
+                  {tiers.map((t) => {
+                    const reached = qty >= t.min_quantity;
+                    const label =
+                      t.label ??
+                      (t.discount_type === 'percent'
+                        ? `${Number(t.discount_value)}% off`
+                        : `${formatCurrency(Number(t.discount_value))} off/un`);
+                    return (
+                      <li
+                        key={`${t.min_quantity}-${t.discount_type}`}
+                        className={`flex items-center justify-between ${
+                          reached ? 'font-semibold text-foreground' : 'text-muted-foreground'
+                        }`}
+                      >
+                        <span>A partir de {t.min_quantity} un</span>
+                        <span>{label}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  O desconto vale para todas as unidades e é calculado pelo servidor.
+                </p>
+              </div>
+            )}
 
             {/* Estoque */}
             <p className="text-sm">

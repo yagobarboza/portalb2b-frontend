@@ -9,7 +9,7 @@ import { Button } from '../components/ui/button';
 import { ModeToggle } from '../components/mode-toggle';
 import {
   LayoutDashboard, Package, Users, ShoppingBag, UserCog, TicketIcon,
-  MessageCircle, CreditCard, Zap, LogOut, FolderTree, BadgePercent,
+  MessageCircle, CreditCard, Zap, LogOut, FolderTree, BadgePercent, Percent,
 } from 'lucide-react';
 
 const menuItems = [
@@ -17,6 +17,7 @@ const menuItems = [
   { label: 'Catálogo', href: '/empresa/catalogo', icon: Package },
   { label: 'Categorias', href: '/empresa/categorias', icon: FolderTree, permission: PERMISSIONS.CATALOG_MANAGE },
   { label: 'Preços Especiais', href: '/empresa/precos', icon: BadgePercent, permission: PERMISSIONS.CATALOG_MANAGE },
+  { label: 'Descontos', href: '/empresa/descontos', icon: Percent, permission: PERMISSIONS.CATALOG_MANAGE },
   { label: 'Clientes', href: '/empresa/clientes', icon: Users },
   { label: 'Pedidos', href: '/empresa/pedidos', icon: ShoppingBag },
   { label: 'Equipe', href: '/empresa/equipe', icon: UserCog, permission: PERMISSIONS.USER_READ },

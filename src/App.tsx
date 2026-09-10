@@ -17,6 +17,7 @@ import FinancialPage from './pages/client/FinancialPage';
 import CatalogPage from './pages/company/CatalogPage';
 import CategoriesPage from './pages/company/CategoriesPage';
 import PricingPage from './pages/company/PricingPage';
+import QuantityDiscountsPage from './pages/company/QuantityDiscountsPage'; // ✅ descontos por quantidade
 import CompanyFinancialPage from './pages/company/CompanyFinancialPage';
 import CompaniesPage from './pages/superadmin/CompaniesPage';
 import {
@@ -58,6 +59,7 @@ export default function App() {
                 <Route path="/empresa/tickets" element={<CompanyTicketsPage />} />
                 <Route path="/empresa/chat" element={<CompanyChatPage />} />
                 <Route path="/empresa/precos" element={<PricingPage />} />
+                <Route path="/empresa/descontos" element={<QuantityDiscountsPage />} />
                 <Route path="/empresa/financeiro" element={<CompanyFinancialPage />} />
               </Route>
             </Route>

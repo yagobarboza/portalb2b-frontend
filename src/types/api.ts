@@ -8,6 +8,7 @@
  * - Valores monetários trafegam como number (o backend envia Decimal/string
  *   numérica) e devem ser formatados com Intl.NumberFormat('pt-BR', ...).
  */
+
 // ─────────────────────────── Enums (espelho de app/models/enums.py) ─────────
 export type UserStatus = 'active' | 'inactive' | 'blocked';
 export type CustomerStatus = 'active' | 'inactive' | 'blocked';
@@ -39,6 +40,8 @@ export type ChatRoomStatus = 'open' | 'closed';
 export type FinancialAccountStatus = 'open' | 'paid' | 'overdue';
 export type FileOwnerType = 'product' | 'catalog' | 'ticket' | 'chat' | 'document' | 'user';
 export type NotificationType = 'order' | 'ticket' | 'chat' | 'financial' | 'system';
+// ✅ Tipo de desconto por quantidade (espelho de DiscountType no backend)
+export type DiscountType = 'percent' | 'fixed';
 
 // ─────────────────────────── Auth (schemas/auth.py) ─────────────────────────
 export interface LoginRequest {
@@ -144,6 +147,13 @@ export interface CategoryUpdate {
   parent_id?: string | null;
   is_active?: boolean | null;
 }
+// ✅ Faixa de desconto por quantidade (exibida na vitrine)
+export interface QuantityTier {
+  min_quantity: number;
+  discount_type: DiscountType;
+  discount_value: number;
+  label: string | null;
+}
 export interface Product {
   id: string;
   sku: string;
@@ -158,6 +168,12 @@ export interface Product {
   status: ProductStatus;
   created_at: string;
   image_url: string | null;
+  // ✅ Preço calculado para o cliente (vitrine) — preenchido pelo backend
+  customer_price?: number | null;
+  final_price?: number | null;
+  price_source?: 'customer' | 'price_list' | 'default';
+  // ✅ Faixas de desconto por quantidade (Desconto Progressivo)
+  quantity_discounts?: QuantityTier[];
 }
 export interface ProductCreate {
   sku: string;
@@ -220,6 +236,32 @@ export interface CustomerPrice {
   product_id: string;
   price: number;
 }
+// ✅ Listagem enriquecida de preços especiais (Bloco A)
+export interface CustomerPriceDetail {
+  id: string;
+  customer_id: string;
+  customer_name: string | null;
+  product_id: string;
+  product_name: string | null;
+  product_sku: string | null;
+  price: number;
+}
+export interface CustomerPriceUpdate {
+  price: number;
+}
+export interface CustomerPricePage {
+  items: CustomerPriceDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+export interface CustomerPriceImportResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: Array<{ row: Record<string, unknown>; error: string }>;
+}
 export interface PriceQuote {
   product_id: string;
   sku: string;
@@ -228,6 +270,52 @@ export interface PriceQuote {
   customer_price: number | null;
   final_price: number;
   price_source: 'customer' | 'price_list' | 'default';
+  // ✅ Desconto por quantidade (Desconto Progressivo)
+  quantity?: number | null;
+  quantity_discounts?: QuantityTier[];
+}
+
+// ──────────────────── Descontos por Quantidade (schemas/discount.py) ────────
+export interface QuantityDiscountCreate {
+  product_id: string;
+  customer_id?: string | null; // null/ausente = todos os clientes
+  min_quantity: number;
+  discount_type: DiscountType;
+  discount_value: number;
+}
+export interface QuantityDiscountUpdate {
+  product_id?: string | null;
+  customer_id?: string | null;
+  min_quantity?: number | null;
+  discount_type?: DiscountType | null;
+  discount_value?: number | null;
+  is_active?: boolean | null;
+}
+export interface QuantityDiscount {
+  id: string;
+  product_id: string;
+  product_name: string | null;
+  product_sku: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  min_quantity: number;
+  discount_type: DiscountType;
+  discount_value: number;
+  is_active: boolean;
+  created_at: string;
+}
+export interface QuantityDiscountPage {
+  items: QuantityDiscount[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+export interface QuantityDiscountImportResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: Array<{ row: number | Record<string, unknown>; error: string }>;
 }
 
 // ─────────────────────────── Cart (schemas/cart.py) ─────────────────────────
@@ -343,7 +431,7 @@ export interface UserRead {
   phone: string | null;
   status: UserStatus;
   roles: string[]; // slugs
-  // ✅ NOVO: setor de atendimento do chat (NULL = vê todos os setores)
+  // ✅ setor de atendimento do chat (NULL = vê todos os setores)
   chat_sector: ChatSector | null;
 }
 export interface UserCreate {
@@ -357,7 +445,7 @@ export interface UserUpdate {
   phone?: string | null;
   role_slugs?: string[] | null;
   status?: UserStatus | null;
-  // ✅ NOVO: setor de atendimento do chat (NULL = vê todos os setores)
+  // ✅ setor de atendimento do chat (NULL = vê todos os setores)
   chat_sector?: ChatSector | null;
 }
 export interface UserPage {

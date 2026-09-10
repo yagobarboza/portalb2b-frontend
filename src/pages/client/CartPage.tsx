@@ -115,6 +115,11 @@ export default function CartPage() {
             const stock = stockOf(product.stock);
             // ✅ Botão + trava quando a quantidade atinge o estoque disponível.
             const atStock = stock > 0 && qty >= stock;
+            // ✅ Preço de referência do cliente (sem desconto por quantidade).
+            //    `final_price` = preço negociado do cliente; se ausente, o preço padrão.
+            const referencePrice = Number(product.final_price ?? product.price);
+            const unitPrice = Number(item.unit_price);
+            const hasQtyDiscount = referencePrice - unitPrice > 0.001;
             return (
               <Card key={item.id}>
                 <CardContent className="flex items-center gap-4 p-4">
@@ -138,8 +143,19 @@ export default function CartPage() {
                     </p>
                     <p className="mt-1 text-sm">
                       <span className="text-muted-foreground">Preço unitário: </span>
-                      <span className="font-semibold">{formatCurrency(item.unit_price)}</span>
+                      <span className="font-semibold">{formatCurrency(unitPrice)}</span>
+                      {hasQtyDiscount && (
+                        <span className="ml-2 text-xs text-muted-foreground line-through">
+                          {formatCurrency(referencePrice)}
+                        </span>
+                      )}
                     </p>
+                    {/* ✅ Desconto por quantidade aplicado pelo servidor */}
+                    {hasQtyDiscount && (
+                      <p className="mt-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                        Desconto por quantidade aplicado
+                      </p>
+                    )}
                     {/* ✅ Estoque disponível + aviso quando atinge o limite */}
                     {stock > 0 && (
                       <p className={`mt-0.5 text-xs ${atStock ? 'font-medium text-destructive' : 'text-muted-foreground'}`}>
