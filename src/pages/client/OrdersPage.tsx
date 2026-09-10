@@ -97,9 +97,22 @@ export default function ClientOrdersPage() {
         {orders.map((order) => (
           <Card key={order.id} className="overflow-hidden">
             <CardContent className="p-0">
-              <button
-                className="w-full p-4 text-left transition-colors hover:bg-muted/30"
+              {/*
+                ✅ FIX: o card era um <button> contendo um <Button> interno
+                (HTML inválido → warning "button cannot be a descendant of button").
+                Agora é uma <div> clicável com role="button" + teclado.
+              */}
+              <div
+                role="button"
+                tabIndex={0}
+                className="w-full cursor-pointer p-4 text-left transition-colors hover:bg-muted/30"
                 onClick={() => toggleExpand(order.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleExpand(order.id);
+                  }
+                }}
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-4">
@@ -122,7 +135,7 @@ export default function ClientOrdersPage() {
                     </Button>
                   </div>
                 </div>
-              </button>
+              </div>
 
               {expandedId === order.id && (
                 <div className="border-t px-4 py-3">

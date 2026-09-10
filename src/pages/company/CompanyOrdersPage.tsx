@@ -21,6 +21,21 @@ import {
 
 const PAGE_SIZE = 20;
 
+/** Períodos pré-definidos do filtro de data (padrão: Hoje). */
+type PeriodKey = 'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all';
+
+/** Início do dia (00:00:00.000) no FUSO DO NAVEGADOR. */
+const startOfDay = (d: Date) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+/** Fim do dia (23:59:59.999) no FUSO DO NAVEGADOR. */
+const endOfDay = (d: Date) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+/** Converte 'YYYY-MM-DD' para Date local (evita o shift de UTC do new Date(str)). */
+const parseLocalDate = (isoDate: string) => {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+};
+
 export default function CompanyOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [total, setTotal] = useState(0);
@@ -30,11 +45,19 @@ export default function CompanyOrdersPage() {
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | OrderStatus>('all');
+
+  // ✅ Filtro por período — PADRÃO: pedidos do DIA.
+  const [filterPeriod, setFilterPeriod] = useState<PeriodKey>('today');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
   // ✅ BUG 6: mapas de nomes (cliente + produto).
   const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
   const [productMap, setProductMap] = useState<Record<string, string>>({});
+
   // Detalhe de itens
   const [detail, setDetail] = useState<Order | null>(null);
+
   // Transição de status
   const [transitionTarget, setTransitionTarget] = useState<Order | null>(null);
   const [transitionTo, setTransitionTo] = useState<OrderStatus | null>(null);
@@ -66,6 +89,52 @@ export default function CompanyOrdersPage() {
     return () => { active = false; };
   }, []);
 
+  // ✅ Converte o período escolhido no intervalo UTC (ISO 8601) enviado à API.
+  // "Hoje" = 00:00:00 → 23:59:59 do dia atual NO FUSO DO NAVEGADOR, convertido
+  // para UTC — assim o dia fecha corretamente para qualquer empresa do Brasil.
+  const dateParams = useMemo(() => {
+    const now = new Date();
+    switch (filterPeriod) {
+      case 'today':
+        return {
+          date_from: startOfDay(now).toISOString(),
+          date_to: endOfDay(now).toISOString(),
+        };
+      case 'yesterday': {
+        const y = new Date(now);
+        y.setDate(now.getDate() - 1);
+        return {
+          date_from: startOfDay(y).toISOString(),
+          date_to: endOfDay(y).toISOString(),
+        };
+      }
+      case 'week': {
+        const w = new Date(now);
+        w.setDate(now.getDate() - 6); // últimos 7 dias (inclui hoje)
+        return {
+          date_from: startOfDay(w).toISOString(),
+          date_to: endOfDay(now).toISOString(),
+        };
+      }
+      case 'month': {
+        const m = new Date(now.getFullYear(), now.getMonth(), 1);
+        return {
+          date_from: startOfDay(m).toISOString(),
+          date_to: endOfDay(now).toISOString(),
+        };
+      }
+      case 'custom': {
+        if (!customFrom || !customTo) return {}; // sem intervalo → mostra tudo
+        return {
+          date_from: startOfDay(parseLocalDate(customFrom)).toISOString(),
+          date_to: endOfDay(parseLocalDate(customTo)).toISOString(),
+        };
+      }
+      default:
+        return {}; // 'all' → todos os pedidos
+    }
+  }, [filterPeriod, customFrom, customTo]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -74,6 +143,7 @@ export default function CompanyOrdersPage() {
         page_size: PAGE_SIZE,
         status: filterStatus === 'all' ? undefined : filterStatus,
         search: searchDebounced || undefined,
+        ...dateParams, // ✅ filtro por período (hoje/ontem/7 dias/mês/personalizado)
       });
       setOrders(data.items);
       setTotal(data.total);
@@ -83,7 +153,7 @@ export default function CompanyOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, filterStatus, searchDebounced]);
+  }, [page, filterStatus, searchDebounced, dateParams]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -158,7 +228,8 @@ export default function CompanyOrdersPage() {
         ))}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      {/* Filtros: busca + período (padrão Hoje) + status */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -168,6 +239,48 @@ export default function CompanyOrdersPage() {
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
+
+        {/* ✅ Período — padrão "Hoje" */}
+        <div className="w-full sm:w-44">
+          <Select
+            value={filterPeriod}
+            onValueChange={(v) => { setFilterPeriod(v as PeriodKey); setPage(1); }}
+          >
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Hoje</SelectItem>
+              <SelectItem value="yesterday">Ontem</SelectItem>
+              <SelectItem value="week">Últimos 7 dias</SelectItem>
+              <SelectItem value="month">Este mês</SelectItem>
+              <SelectItem value="custom">Personalizado</SelectItem>
+              <SelectItem value="all">Todos</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* ✅ Período personalizado: intervalo de datas */}
+        {filterPeriod === 'custom' && (
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              className="w-full sm:w-40"
+              value={customFrom}
+              max={customTo || undefined}
+              onChange={(e) => { setCustomFrom(e.target.value); setPage(1); }}
+              aria-label="Data inicial"
+            />
+            <span className="text-xs text-muted-foreground">até</span>
+            <Input
+              type="date"
+              className="w-full sm:w-40"
+              value={customTo}
+              min={customFrom || undefined}
+              onChange={(e) => { setCustomTo(e.target.value); setPage(1); }}
+              aria-label="Data final"
+            />
+          </div>
+        )}
+
         <div className="w-full sm:w-56">
           <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v as 'all' | OrderStatus); setPage(1); }}>
             <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>

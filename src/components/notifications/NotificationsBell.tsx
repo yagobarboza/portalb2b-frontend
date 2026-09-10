@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/context/AuthContext';
+import { ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -29,7 +30,7 @@ const meta: Record<NotificationType, { icon: LucideIcon; className: string }> = 
 const POLL_INTERVAL_MS = 30000;
 
 export default function NotificationsBell() {
-  const { user } = useAuth();
+  const { user, refreshSession } = useAuth();
   const navigate = useNavigate();
 
   const [open, setOpen] = useState(false);
@@ -52,20 +53,35 @@ export default function NotificationsBell() {
     }
   };
 
-  // Polling do contador de não lidas (30s)
+  // ✅ Polling do contador de não lidas (30s).
+  //    Se um tick falhar por sessão expirada (401), tenta RENOVAR a sessão
+  //    uma vez (refreshSession rotaciona o cookie) em vez de só engolir o
+  //    erro — evita o ruído constante de 401 no console.
   useEffect(() => {
     if (!user) return;
     let active = true;
+    let refreshedOnce = false;
     const load = async () => {
       try {
         const d = await fetchUnreadCount();
         if (active) setUnread(d.unread);
-      } catch { /* 401 é tratado pelo interceptor */ }
+      } catch (err) {
+        if (!refreshedOnce && err instanceof ApiError && err.status === 401) {
+          refreshedOnce = true;
+          try {
+            await refreshSession();
+          } catch {
+            // sessão realmente expirada → o interceptor global já trata.
+          }
+        } else {
+          /* outros erros: mantém o último valor */
+        }
+      }
     };
     load();
     const id = setInterval(load, POLL_INTERVAL_MS);
     return () => { active = false; clearInterval(id); };
-  }, [user]);
+  }, [user, refreshSession]);
 
   const refreshList = useCallback(async () => {
     setLoading(true);
