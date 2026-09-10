@@ -3,6 +3,7 @@ import { Outlet, useNavigate, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useBranding } from '../lib/useBranding';
+import { useDocumentTitle } from '../lib/useDocumentTitle'; // ✅ título da aba
 import { cn } from '../lib/utils';
 import NotificationsBell from '../components/notifications/NotificationsBell';
 import { Button } from '../components/ui/button';
@@ -26,6 +27,9 @@ export default function ClientLayout() {
   const { branding, logoUrl } = useBranding();
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // ✅ Título da aba: "Portal B2B - {Nome da empresa}"
+  useDocumentTitle();
 
   const handleLogout = async () => {
     if (loggingOut) return;

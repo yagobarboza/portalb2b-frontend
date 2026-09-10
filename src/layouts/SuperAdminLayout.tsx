@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, useNavigate, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useBranding } from '../lib/useBranding';
+import { useDocumentTitle } from '../lib/useDocumentTitle'; // ✅ título da aba
 import { Button } from '../components/ui/button';
 import NotificationsBell from '../components/notifications/NotificationsBell';
 import { Zap, Building2, LogOut } from 'lucide-react';
@@ -14,6 +15,9 @@ export default function SuperAdminLayout() {
   const { branding, logoUrl } = useBranding();
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // ✅ Título da aba: "Portal B2B" (sem empresa — branding costuma ser ausente aqui)
+  useDocumentTitle();
 
   const displayName = user?.full_name?.trim() || 'Administrador';
 

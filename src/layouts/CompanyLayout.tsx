@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, useNavigate, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useBranding } from '../lib/useBranding';
+import { useDocumentTitle } from '../lib/useDocumentTitle'; // ✅ título da aba
 import { PERMISSIONS } from '../lib/constants';
 import { cn } from '../lib/utils';
 import NotificationsBell from '../components/notifications/NotificationsBell';
@@ -33,6 +34,9 @@ export default function CompanyLayout() {
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // ✅ drawer mobile
+
+  // ✅ Título da aba: "Portal B2B - {Nome da empresa}"
+  useDocumentTitle();
 
   const displayName = user?.full_name?.trim() || 'Usuário';
   const userInitial = displayName.charAt(0).toUpperCase();
