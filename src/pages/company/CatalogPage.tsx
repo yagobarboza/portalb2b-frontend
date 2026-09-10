@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { FileUp, Package, Pencil, Plus, Search, Upload } from 'lucide-react';
+import { FileUp, Link2, Package, Pencil, Plus, Search, Upload } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import type { Category, Product, ProductPage } from '@/types/api';
 import {
@@ -36,6 +36,10 @@ const stockInt = (v: number | string | null | undefined): number | null => {
   if (Number.isNaN(n)) return null;
   return Math.max(0, Math.trunc(n));
 };
+
+/** ✅ URL http(s) válida e não-vazia (imagem externa / CDN do cliente). */
+const isHttpUrl = (v: string | null | undefined): v is string =>
+  !!v && /^https?:\/\//i.test(v.trim());
 
 /* Chips legíveis em Light e Dark (fundo invertido ao foreground). */
 function SkuChip({ sku }: { sku: string }) {
@@ -79,11 +83,13 @@ interface ProductForm {
   price: string;
   stock: string;
   description: string;
+  // ✅ URL EXTERNA da imagem (CDN do cliente) — não consome o R2.
+  image_url: string;
 }
 
 const emptyForm: ProductForm = {
   sku: '', code: '', name: '', brand: '', category_id: '',
-  unit: '', price: '', stock: '', description: '',
+  unit: '', price: '', stock: '', description: '', image_url: '',
 };
 
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
@@ -157,6 +163,7 @@ export default function CatalogPage() {
     }
   }, [page, searchDebounced, categoryFilter]);
   useEffect(() => { loadProducts(); }, [loadProducts]);
+
   useEffect(() => () => revokeObjectPreview(preview), [preview]);
 
   const resetForm = () => {
@@ -206,6 +213,10 @@ export default function CatalogPage() {
       const stock = Number(form.stock);
       if (Number.isNaN(stock) || stock < 0) return 'Estoque inválido (≥ 0).';
     }
+    // ✅ URL externa (opcional) precisa ser http(s).
+    if (form.image_url.trim() && !isHttpUrl(form.image_url)) {
+      return 'A URL da imagem deve começar com http:// ou https://.';
+    }
     return null;
   };
 
@@ -220,13 +231,16 @@ export default function CatalogPage() {
     // ✅ Estoque sempre inteiro (nunca decimal/moeda).
     stock: form.stock.trim() ? stockInt(form.stock) : null,
     description: form.description.trim() || null,
+    // ✅ URL externa: '' (vazio) LIMPA a imagem externa no backend (→ NULL).
+    image_url: form.image_url.trim(),
   });
 
   const persistProduct = async (payload: ReturnType<typeof buildPayload>, productId?: string) => {
     const saved = productId
       ? await api.patch<Product>(`/catalog/products/${productId}`, payload)
       : await api.post<Product>('/catalog/products', payload);
-    if (imageFile) {
+    // ✅ Upload para o R2 só quando NÃO há URL externa informada.
+    if (imageFile && !payload.image_url) {
       try {
         await uploadProductImage(saved.id, imageFile);
         toast.success('Imagem enviada com sucesso.');
@@ -289,12 +303,60 @@ export default function CatalogPage() {
       price: String(p.price),
       stock: p.stock === null || p.stock === undefined ? '' : String(stockInt(p.stock)),
       description: p.description ?? '',
+      // ✅ Só a URL EXTERNA crua (nunca a do R2) — campo vazio se não houver.
+      image_url: p.image_url_external ?? '',
     });
     setFormError(null);
     setImageFile(null);
     setImageError(null);
     setPreview(null);
   };
+
+  /** Bloco de imagem reutilizado nos dois diálogos (upload + URL externa). */
+  const imageBlock = (fallbackUrl?: string | null, fallbackAlt?: string) => (
+    <div className="space-y-3 rounded-lg border border-dashed p-4">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={onPickFile}
+      />
+      <div className="text-center">
+        {preview ? (
+          <img src={preview} alt="Prévia da imagem" className="mx-auto h-24 rounded object-cover" />
+        ) : isHttpUrl(form.image_url) ? (
+          <img src={form.image_url} alt="Imagem externa" className="mx-auto h-24 rounded object-cover" referrerPolicy="no-referrer" />
+        ) : isSafeImageUrl(fallbackUrl) ? (
+          <img src={fallbackUrl} alt={fallbackAlt ?? 'Imagem do produto'} className="mx-auto h-24 rounded object-cover" referrerPolicy="no-referrer" />
+        ) : (
+          <Upload className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+        )}
+        <Button type="button" variant="outline" className="mt-3" onClick={() => fileRef.current?.click()}>
+          <FileUp className="mr-2 h-4 w-4" />{imageFile ? 'Trocar imagem' : 'Enviar imagem para o R2'}
+        </Button>
+        {imageError && <p role="alert" className="mt-2 text-xs text-destructive">{imageError}</p>}
+      </div>
+
+      {/* ✅ URL externa (CDN do cliente) — não consome espaço do R2 */}
+      <div className="space-y-2 border-t pt-3">
+        <Label htmlFor="image-url" className="flex items-center gap-2">
+          <Link2 className="h-3.5 w-3.5" />URL da imagem (externa)
+        </Label>
+        <Input
+          id="image-url"
+          type="url"
+          inputMode="url"
+          placeholder="https://cdn.cliente.com.br/produto.png"
+          value={form.image_url}
+          onChange={setField('image_url')}
+        />
+        <p className="text-xs text-muted-foreground">
+          Se preenchida, a imagem externa tem prioridade e <strong>nenhum upload</strong> é feito para o R2.
+        </p>
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -359,7 +421,6 @@ export default function CatalogPage() {
                     <Input id="unit" value={form.unit} onChange={setField('unit')} placeholder="un" />
                   </div>
                 </div>
-
                 {/* ✅ Descrição com modo Texto/HTML + prévia sanitizada (Bloco Vitrine) */}
                 <DescriptionField
                   id="description"
@@ -367,25 +428,7 @@ export default function CatalogPage() {
                   onChange={setDescription}
                   rows={2}
                 />
-
-                <div className="rounded-lg border border-dashed p-4 text-center">
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={onPickFile}
-                  />
-                  {preview ? (
-                    <img src={preview} alt="Prévia do produto" className="mx-auto h-24 rounded object-cover" />
-                  ) : (
-                    <Upload className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
-                  )}
-                  <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
-                    <FileUp className="mr-2 h-4 w-4" />Escolher imagem
-                  </Button>
-                  {imageError && <p role="alert" className="mt-2 text-xs text-destructive">{imageError}</p>}
-                </div>
+                {imageBlock()}
                 {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
                 <DialogFooter>
                   <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar'}</Button>
@@ -559,7 +602,6 @@ export default function CatalogPage() {
                   <Input id="edit-unit" value={form.unit} onChange={setField('unit')} />
                 </div>
               </div>
-
               {/* ✅ Descrição com modo Texto/HTML + prévia sanitizada (Bloco Vitrine) */}
               <DescriptionField
                 id="edit-description"
@@ -567,27 +609,7 @@ export default function CatalogPage() {
                 onChange={setDescription}
                 rows={2}
               />
-
-              <div className="rounded-lg border border-dashed p-4 text-center">
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={onPickFile}
-                />
-                {preview ? (
-                  <img src={preview} alt="Prévia" className="mx-auto h-24 rounded object-cover" />
-                ) : isSafeImageUrl(editProduct.image_url) ? (
-                  <img src={editProduct.image_url} alt={editProduct.name} className="mx-auto h-24 rounded object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                  <Upload className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
-                )}
-                <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
-                  <FileUp className="mr-2 h-4 w-4" />{imageFile ? 'Trocar imagem' : 'Enviar nova imagem'}
-                </Button>
-                {imageError && <p role="alert" className="mt-2 text-xs text-destructive">{imageError}</p>}
-              </div>
+              {imageBlock(editProduct.image_url, editProduct.name)}
               {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
               <DialogFooter>
                 <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Salvar alterações'}</Button>

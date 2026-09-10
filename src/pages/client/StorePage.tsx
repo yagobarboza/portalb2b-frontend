@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Minus, Package, Plus, Search, ShoppingCart } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Package, Plus, Search, ShoppingCart } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
@@ -16,7 +16,10 @@ import {
 } from '../../components/ui/select';
 
 type SortOption = 'relevance' | 'price-asc' | 'price-desc' | 'name-asc';
-const PAGE_SIZE = 60;
+// ✅ Paginação da vitrine: 50 produtos por página.
+const PAGE_SIZE = 50;
+// ✅ Quantos números de página mostrar ao redor da página atual (janela).
+const PAGE_WINDOW = 2;
 
 /** Estoques são sempre INTEIROS (10, nunca "10.000"). */
 const stockOf = (p: Product | null | undefined): number => {
@@ -69,6 +72,26 @@ function SpecialBadge() {
   );
 }
 
+/** ✅ Janela de números de página (ex.: [1 … 3 4 5 6 7 … 20]). */
+const pageWindow = (current: number, total: number): (number | '…')[] => {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const pages = new Set<number>([1, total]);
+  for (let p = current - PAGE_WINDOW; p <= current + PAGE_WINDOW; p++) {
+    if (p >= 1 && p <= total) pages.add(p);
+  }
+  const sorted = [...pages].sort((a, b) => a - b);
+  const out: (number | '…')[] = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) out.push('…');
+    out.push(p);
+    prev = p;
+  }
+  return out;
+};
+
 interface StorePageData {
   items: StoreProduct[];
   total: number;
@@ -89,6 +112,12 @@ export default function StorePage() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
   const [adding, setAdding] = useState(false);
+  // ✅ Paginação.
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  // ✅ Campo "Ir para página".
+  const [jumpTo, setJumpTo] = useState('');
   // Quantidade por produto no CARD (como ecommerce) — default 1.
   const [qtys, setQtys] = useState<Record<string, number>>({});
 
@@ -102,6 +131,16 @@ export default function StorePage() {
     const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
     return () => window.clearTimeout(t);
   }, [search]);
+
+  // ✅ Toda mudança de página volta ao topo da vitrine.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [page]);
+
+  // ✅ Mantém o campo "Ir para página" sincronizado com a página atual.
+  useEffect(() => {
+    setJumpTo(String(page));
+  }, [page]);
 
   // Categorias.
   useEffect(() => {
@@ -117,7 +156,7 @@ export default function StorePage() {
     return () => { active = false; };
   }, []);
 
-  // Produtos (backend filtra/ordena e anexa o preço especial do cliente).
+  // Produtos (backend filtra/ordena, pagina e anexa o preço especial do cliente).
   const loadProducts = useCallback(async () => {
     setLoading(true);
     try {
@@ -127,8 +166,8 @@ export default function StorePage() {
         : sortBy === 'name-asc' ? { sort_by: 'name', sort_dir: 'asc' }
         : {};
       const data = await api.get<StorePageData>('/catalog/products', {
-        page: 1,
-        page_size: PAGE_SIZE,
+        page,                       // ✅ página atual
+        page_size: PAGE_SIZE,       // ✅ 50 por página
         search: searchDebounced || undefined,
         category_id: selectedCategory || undefined,
         // O backend FORÇA o customer_id do próprio cliente (anti-vazamento)
@@ -136,14 +175,28 @@ export default function StorePage() {
         ...sortParams,
       });
       setProducts(data.items);
+      setTotal(data.total);
+      setPages(data.pages || 1);
       data.items.forEach(registerProduct);
     } catch {
       toast.error('Não foi possível carregar os produtos.');
     } finally {
       setLoading(false);
     }
-  }, [searchDebounced, selectedCategory, sortBy, user?.customer_id, registerProduct]);
+  }, [page, searchDebounced, selectedCategory, sortBy, user?.customer_id, registerProduct]);
   useEffect(() => { loadProducts(); }, [loadProducts]);
+
+  // ✅ Ir para uma página específica (valida entre 1 e pages).
+  const goToPage = (target: number) => {
+    if (Number.isNaN(target)) return;
+    const clamped = Math.max(1, Math.min(pages, Math.trunc(target)));
+    setPage(clamped);
+  };
+
+  const handleJump = (e: React.FormEvent) => {
+    e.preventDefault();
+    goToPage(Number(jumpTo));
+  };
 
   const handleAdd = async (product: Product, qty: number) => {
     setAdding(true);
@@ -172,7 +225,7 @@ export default function StorePage() {
         </p>
       </div>
 
-      {/* Filtros */}
+      {/* Filtros — ✅ trocar filtro/busca/ordenação volta para a página 1 */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -180,12 +233,12 @@ export default function StorePage() {
             className="pl-9"
             placeholder="Buscar produto…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
         <Select
           value={selectedCategory || 'all'}
-          onValueChange={(v) => setSelectedCategory(v === 'all' ? '' : v)}
+          onValueChange={(v) => { setSelectedCategory(v === 'all' ? '' : v); setPage(1); }}
         >
           <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="Categoria" /></SelectTrigger>
           <SelectContent>
@@ -195,7 +248,7 @@ export default function StorePage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+        <Select value={sortBy} onValueChange={(v) => { setSortBy(v as SortOption); setPage(1); }}>
           <SelectTrigger className="w-full sm:w-52"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="relevance">Relevância</SelectItem>
@@ -214,119 +267,184 @@ export default function StorePage() {
           <h3 className="text-lg font-semibold text-muted-foreground">Nenhum produto encontrado</h3>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {products.map((p) => {
-            const stock = stockOf(p);
-            const out = stock <= 0;
-            const qty = Math.min(qtyOf(p.id), Math.max(1, stock));
-            const { base, final, isSpecial } = priceInfo(p);
-            return (
-              <Card key={p.id} className="flex flex-col overflow-hidden">
-                <button
-                  type="button"
-                  className="flex h-36 w-full items-center justify-center overflow-hidden bg-muted/50"
-                  onClick={() => openProduct(p.id)}
-                >
-                  {isSafeImageUrl(p.image_url) ? (
-                    <img
-                      src={p.image_url}
-                      alt={p.name}
-                      className="h-full w-full object-cover transition-transform hover:scale-105"
-                      referrerPolicy="no-referrer"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <Package className="h-10 w-10 text-muted-foreground/60" />
-                  )}
-                </button>
-                <CardContent className="flex flex-1 flex-col gap-2 p-3">
-                  <button type="button" className="text-left" onClick={() => openProduct(p.id)}>
-                    <h3 className="line-clamp-2 font-semibold leading-tight">{p.name}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {p.brand ?? ''}{p.unit ? ` · ${p.unit}` : ''}
-                    </p>
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {products.map((p) => {
+              const stock = stockOf(p);
+              const out = stock <= 0;
+              const qty = Math.min(qtyOf(p.id), Math.max(1, stock));
+              const { base, final, isSpecial } = priceInfo(p);
+              return (
+                <Card key={p.id} className="flex flex-col overflow-hidden">
+                  <button
+                    type="button"
+                    className="flex h-36 w-full items-center justify-center overflow-hidden bg-muted/50"
+                    onClick={() => openProduct(p.id)}
+                  >
+                    {isSafeImageUrl(p.image_url) ? (
+                      <img
+                        src={p.image_url}
+                        alt={p.name}
+                        className="h-full w-full object-cover transition-transform hover:scale-105"
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <Package className="h-10 w-10 text-muted-foreground/60" />
+                    )}
                   </button>
-
-                  {/* ✅ Preço do card: "De X" riscado → "Por Y" + selo, quando especial */}
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="min-w-0">
-                      {isSpecial ? (
-                        <>
-                          <span className="block text-xs leading-none text-muted-foreground line-through">
-                            De {formatCurrency(base)}
+                  <CardContent className="flex flex-1 flex-col gap-2 p-3">
+                    <button type="button" className="text-left" onClick={() => openProduct(p.id)}>
+                      <h3 className="line-clamp-2 font-semibold leading-tight">{p.name}</h3>
+                      <p className="text-xs text-muted-foreground">
+                        {p.brand ?? ''}{p.unit ? ` · ${p.unit}` : ''}
+                      </p>
+                    </button>
+                    {/* ✅ Preço do card: "De X" riscado → "Por Y" + selo, quando especial */}
+                    <div className="flex items-end justify-between gap-2">
+                      <div className="min-w-0">
+                        {isSpecial ? (
+                          <>
+                            <span className="block text-xs leading-none text-muted-foreground line-through">
+                              De {formatCurrency(base)}
+                            </span>
+                            <span className="mt-0.5 block text-lg font-bold leading-none">
+                              Por {formatCurrency(final)}
+                            </span>
+                            <span className="mt-1 block">
+                              <SpecialBadge />
+                            </span>
+                          </>
+                        ) : (
+                          <span className="block text-lg font-bold leading-none">
+                            {formatCurrency(base)}
                           </span>
-                          <span className="mt-0.5 block text-lg font-bold leading-none">
-                            Por {formatCurrency(final)}
-                          </span>
-                          <span className="mt-1 block">
-                            <SpecialBadge />
-                          </span>
-                        </>
-                      ) : (
-                        <span className="block text-lg font-bold leading-none">
-                          {formatCurrency(base)}
-                        </span>
-                      )}
+                        )}
+                      </div>
+                      {/* ✅ Estoque SEMPRE inteiro e visível no card (contraste Light/Dark) */}
+                      <StockBadge stock={stock} />
                     </div>
-                    {/* ✅ Estoque SEMPRE inteiro e visível no card (contraste Light/Dark) */}
-                    <StockBadge stock={stock} />
-                  </div>
-
-                  {/* ✅ Stepper de quantidade no card (como ecommerce) */}
-                  {!out && (
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1">
+                    {/* ✅ Stepper de quantidade no card (como ecommerce) */}
+                    {!out && (
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={qty <= 1}
+                            onClick={() => setQty(p.id, qty - 1)}
+                            aria-label="Diminuir"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </Button>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={stock}
+                            step={1}
+                            value={qty}
+                            onChange={(e) => {
+                              const v = Math.max(1, Math.min(stock, Math.trunc(Number(e.target.value) || 1)));
+                              setQty(p.id, v);
+                            }}
+                            className="h-8 w-14 text-center"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={qty >= stock}
+                            onClick={() => setQty(p.id, qty + 1)}
+                            aria-label="Aumentar"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
                         <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          disabled={qty <= 1}
-                          onClick={() => setQty(p.id, qty - 1)}
-                          aria-label="Diminuir"
+                          size="sm"
+                          disabled={adding}
+                          onClick={() => handleAdd(p, qty)}
+                          aria-label={`Adicionar ${qty} ao carrinho`}
                         >
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={stock}
-                          step={1}
-                          value={qty}
-                          onChange={(e) => {
-                            const v = Math.max(1, Math.min(stock, Math.trunc(Number(e.target.value) || 1)));
-                            setQty(p.id, v);
-                          }}
-                          className="h-8 w-14 text-center"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8"
-                          disabled={qty >= stock}
-                          onClick={() => setQty(p.id, qty + 1)}
-                          aria-label="Aumentar"
-                        >
-                          <Plus className="h-4 w-4" />
+                          <ShoppingCart className="mr-1 h-4 w-4" />
+                          {qty}
                         </Button>
                       </div>
-                      <Button
-                        size="sm"
-                        disabled={adding}
-                        onClick={() => handleAdd(p, qty)}
-                        aria-label={`Adicionar ${qty} ao carrinho`}
-                      >
-                        <ShoppingCart className="mr-1 h-4 w-4" />
-                        {qty}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* ✅ Paginação: números + Anterior/Próxima + "Ir para página" */}
+          {pages > 1 && (
+            <div className="mt-8 flex flex-col items-center justify-between gap-4 lg:flex-row">
+              <p className="text-sm text-muted-foreground">
+                Página {page} de {pages} · {total} produto(s)
+              </p>
+
+              <div className="flex flex-wrap items-center justify-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                  aria-label="Página anterior"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                {/* ✅ Números de página (janela dinâmica, com "…") */}
+                {pageWindow(page, pages).map((item, idx) =>
+                  item === '…' ? (
+                    <span key={`gap-${idx}`} className="px-1 text-sm text-muted-foreground">…</span>
+                  ) : (
+                    <Button
+                      key={item}
+                      variant={item === page ? 'default' : 'outline'}
+                      size="icon"
+                      className="h-9 w-9"
+                      onClick={() => setPage(item)}
+                      aria-label={`Ir para a página ${item}`}
+                      aria-current={item === page ? 'page' : undefined}
+                    >
+                      {item}
+                    </Button>
+                  ),
+                )}
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={page >= pages}
+                  onClick={() => setPage((p) => p + 1)}
+                  aria-label="Próxima página"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {/* ✅ Campo "Ir para página" */}
+              <form onSubmit={handleJump} className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Ir para</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={pages}
+                  value={jumpTo}
+                  onChange={(e) => setJumpTo(e.target.value)}
+                  className="h-9 w-16 text-center"
+                  aria-label="Número da página"
+                />
+                <Button type="submit" variant="outline" size="sm">Ir</Button>
+              </form>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
