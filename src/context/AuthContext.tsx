@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useCallback, useState } from 'react';
 import type { MfaChallengeResponse, TokenResponse, UserInfo } from '../types/api';
-import { api, SESSION_EXPIRED_EVENT } from '../lib/api';
+import { api, SESSION_EXPIRED_EVENT, clearAuthCookiesClient } from '../lib/api';
 
 export type UserProfile = 'cliente' | 'empresa' | 'superadmin';
 
@@ -88,10 +88,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async (): Promise<void> => {
     try {
       // Revoga a sessão no backend (POST /auth/logout, idempotente).
+      // A resposta traz Set-Cookie com Max-Age=0 → apaga os cookies HttpOnly.
       await api.post('/auth/logout');
     } catch {
       // Sem rede ou sessão já inválida: segue limpando o estado local.
     } finally {
+      // ✅ Defesa extra: limpa cookies no cliente (best-effort), cobrindo
+      // cenários onde o backend não respondeu a tempo.
+      clearAuthCookiesClient();
       setUser(null);
     }
   }, []);

@@ -13,6 +13,25 @@ import { API_BASE_URL } from './env';
 /** Evento global disparado quando a sessão expira (status 401). */
 export const SESSION_EXPIRED_EVENT = 'nydb2b:session-expired';
 
+/**
+ * Limpa os cookies de autenticação no cliente (defesa em profundidade).
+ *
+ * Cookies HttpOnly NÃO podem ser apagados por JavaScript — a remoção
+ * definitiva é feita pelo backend (Set-Cookie com Max-Age=0 no logout).
+ * Este helper garante que qualquer cookie acessível também seja removido,
+ * cobrindo cenários onde o backend não respondeu a tempo (rede/sessão
+ * já inválida). É best-effort: não lança erro.
+ */
+export function clearAuthCookiesClient(): void {
+  const names = ['access_token', 'refresh_token'];
+  const base = 'Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; SameSite=Lax';
+  for (const name of names) {
+    // Tenta sem Secure (dev/http) e com Secure (produção/https).
+    document.cookie = `${name}=; ${base}`;
+    document.cookie = `${name}=; ${base}; Secure`;
+  }
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;

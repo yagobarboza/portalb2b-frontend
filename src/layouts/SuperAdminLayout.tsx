@@ -1,36 +1,19 @@
-import { useState } from 'react';
-import { Outlet, useNavigate, NavLink } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { Outlet, NavLink } from 'react-router-dom';
 import { useBranding } from '../lib/useBranding';
 import { useDocumentTitle } from '../lib/useDocumentTitle'; // ✅ título da aba
-import { Button } from '../components/ui/button';
 import NotificationsBell from '../components/notifications/NotificationsBell';
-import { Zap, Building2, LogOut, ShieldCheck } from 'lucide-react';
+import UserMenu from '../components/UserMenu'; // ✅ menu do usuário (avatar)
+import { Zap, Building2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ModeToggle } from '../components/mode-toggle';
 
 export default function SuperAdminLayout() {
-  const { user, logout } = useAuth();
+  // ✅ 'user'/'logout'/'navigate' saíram: o menu do usuário cuida de /perfil e Sair.
   // Área global: branding opcional (fallback institucional nydB2B quando ausente).
   const { branding, logoUrl } = useBranding();
-  const navigate = useNavigate();
-  const [loggingOut, setLoggingOut] = useState(false);
 
   // ✅ Título da aba: "Portal B2B" (sem empresa — branding costuma ser ausente aqui)
   useDocumentTitle();
-
-  const displayName = user?.full_name?.trim() || 'Administrador';
-
-  const handleLogout = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      // Revoga a sessão no backend antes de redirecionar.
-      await logout();
-    } finally {
-      navigate('/login');
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -58,6 +41,8 @@ export default function SuperAdminLayout() {
             </div>
           </div>
 
+          {/* ✅ Módulos do portal. Configurações do usuário (MFA) NÃO ficam aqui —
+              são acessadas pelo menu do usuário (avatar) → /perfil. */}
           <nav className="flex items-center gap-1 ml-6">
             <NavLink
               to="/superadmin"
@@ -74,21 +59,6 @@ export default function SuperAdminLayout() {
               <Building2 className="w-4 h-4" />
               Empresas
             </NavLink>
-            {/* ✅ Segurança (MFA) — super admin */}
-            <NavLink
-              to="/mfa"
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                )
-              }
-            >
-              <ShieldCheck className="w-4 h-4" />
-              Segurança
-            </NavLink>
           </nav>
 
           <div className="flex-1" />
@@ -98,22 +68,8 @@ export default function SuperAdminLayout() {
           {/* Notificações (Bloco 10) */}
           <NotificationsBell />
 
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium leading-none">{displayName}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{user?.email}</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLogout}
-              disabled={loggingOut}
-              className="text-destructive border-destructive/30 hover:bg-destructive/5"
-            >
-              <LogOut className="w-4 h-4 mr-1.5" />
-              {loggingOut ? 'Saindo…' : 'Sair'}
-            </Button>
-          </div>
+          {/* ✅ Menu do usuário (avatar) — acesso a /perfil e logout */}
+          <UserMenu showName />
         </div>
       </header>
 

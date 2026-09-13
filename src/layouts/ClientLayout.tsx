@@ -1,47 +1,32 @@
-import { useState } from 'react';
-import { Outlet, useNavigate, NavLink } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { Outlet, NavLink } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useBranding } from '../lib/useBranding';
 import { useDocumentTitle } from '../lib/useDocumentTitle'; // ✅ título da aba
 import { cn } from '../lib/utils';
 import NotificationsBell from '../components/notifications/NotificationsBell';
-import { Button } from '../components/ui/button';
+import UserMenu from '../components/UserMenu'; // ✅ menu do usuário (avatar)
 import { ModeToggle } from '../components/mode-toggle';
 import {
-  Package, ShoppingCart, TicketIcon, MessageCircle, CreditCard, Store, Zap, LogOut, ShieldCheck,
+  Package, ShoppingCart, TicketIcon, MessageCircle, CreditCard, Store, Zap,
 } from 'lucide-react';
 
+// ✅ Módulos do portal do cliente. Configurações do usuário (MFA) NÃO ficam
+// aqui — são acessadas pelo menu do usuário (avatar) → /perfil.
 const navLinks = [
   { label: 'Vitrine', href: '/loja', icon: Store },
   { label: 'Meus Pedidos', href: '/pedidos', icon: Package },
   { label: 'Tickets', href: '/tickets', icon: TicketIcon },
   { label: 'Chat', href: '/chat', icon: MessageCircle },
   { label: 'Financeiro', href: '/financeiro', icon: CreditCard },
-  // ✅ Segurança (MFA) — acessível a todos os clientes
-  { label: 'Segurança', href: '/mfa', icon: ShieldCheck },
 ];
 
 export default function ClientLayout() {
-  // ✅ FIX: 'user' removido — não era usado (só 'logout')
-  const { logout } = useAuth();
+  // ✅ 'useAuth' saiu deste layout: login/logout agora vivem no UserMenu.
   const { count } = useCart();
   const { branding, logoUrl } = useBranding();
-  const navigate = useNavigate();
-  const [loggingOut, setLoggingOut] = useState(false);
 
   // ✅ Título da aba: "Portal B2B - {Nome da empresa}"
   useDocumentTitle();
-
-  const handleLogout = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      await logout();
-    } finally {
-      navigate('/login');
-    }
-  };
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -104,9 +89,8 @@ export default function ClientLayout() {
             </NavLink>
             <NotificationsBell />
             <ModeToggle />
-            <Button variant="ghost" size="icon" onClick={handleLogout} disabled={loggingOut} aria-label="Sair">
-              <LogOut className="h-4 w-4" />
-            </Button>
+            {/* ✅ Menu do usuário (avatar) — acesso a /perfil e logout */}
+            <UserMenu />
           </div>
         </div>
       </header>
