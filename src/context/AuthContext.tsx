@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useCallback, useState } from 'react';
-import type { TokenResponse, UserInfo } from '../types/api';
+import type { MfaChallengeResponse, TokenResponse, UserInfo } from '../types/api';
 import { api, SESSION_EXPIRED_EVENT } from '../lib/api';
 
 export type UserProfile = 'cliente' | 'empresa' | 'superadmin';
@@ -17,12 +17,18 @@ export function resolveProfile(user: UserInfo | null | undefined): UserProfile |
   return null;
 }
 
+// ✅ Resultado do login: pode exigir o segundo fator (MFA) ou concluir direto.
+export type LoginResult =
+  | { mfaRequired: true; challengeToken: string; email: string }
+  | { mfaRequired: false; user: UserInfo };
+
 interface AuthContextValue {
   user: UserInfo | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   permissions: string[];
-  login: (email: string, password: string) => Promise<UserInfo>;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  verifyMfaLogin: (challengeToken: string, code: string) => Promise<UserInfo>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
@@ -58,9 +64,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<UserInfo> => {
-    // POST /auth/login (cookies HttpOnly definidos pelo backend) → depois GET /auth/me
-    await api.post<TokenResponse>('/auth/login', { email, password });
+  // ✅ Login em DOIS passos quando o usuário tem MFA ativo:
+  // 1) POST /auth/login → se mfa_required, devolve o desafio (sem sessão);
+  // 2) verifyMfaLogin valida o código e só então cria a sessão.
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    const res = await api.post<TokenResponse | MfaChallengeResponse>('/auth/login', { email, password });
+    if ('mfa_required' in res && res.mfa_required) {
+      return { mfaRequired: true, challengeToken: res.challenge_token, email: res.email };
+    }
+    const me = await api.get<UserInfo>('/auth/me');
+    setUser(me);
+    return { mfaRequired: false, user: me };
+  }, []);
+
+  // ✅ Segundo fator: valida o código TOTP (ou recovery code) e conclui o login.
+  const verifyMfaLogin = useCallback(async (challengeToken: string, code: string): Promise<UserInfo> => {
+    await api.post<TokenResponse>('/auth/mfa/verify-login', { challenge_token: challengeToken, code });
     const me = await api.get<UserInfo>('/auth/me');
     setUser(me);
     return me;
@@ -84,15 +103,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(me);
   }, []);
 
-  // RBAC (Bloco 5): espelha o require_permission do backend.
-  // - is_super_admin === true → acesso total (retorna true para qualquer permissão).
-  // - demais usuários → checagem estrita no array de permissões efetivas de /auth/me.
-  // O backend SEMPRE revalida no endpoint; o front apenas esconde/desabilita UI.
-  const hasPermission = useCallback(
-    (permission: string) =>
-      user?.is_super_admin === true || (user?.permissions.includes(permission) ?? false),
-    [user]
-  );
+  const hasPermission = useCallback((permission: string): boolean => {
+    return (user?.permissions ?? []).includes(permission);
+  }, [user]);
 
   const value: AuthContextValue = {
     user,
@@ -100,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading,
     permissions: user?.permissions ?? [],
     login,
+    verifyMfaLogin,
     logout,
     refreshSession,
     hasPermission,

@@ -20,6 +20,8 @@ import PricingPage from './pages/company/PricingPage';
 import QuantityDiscountsPage from './pages/company/QuantityDiscountsPage'; // ✅ descontos por quantidade
 import CompanyFinancialPage from './pages/company/CompanyFinancialPage';
 import CompaniesPage from './pages/superadmin/CompaniesPage';
+// ✅ Gestão de MFA (autenticação de dois fatores).
+import MfaSettingsPage from './pages/MfaSettingsPage';
 import {
   DashboardPage, ClientsPage, CompanyOrdersPage, TeamPage,
   CompanyTicketsPage, CompanyChatPage,
@@ -33,6 +35,15 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<LoginPage />} />
+
+            {/* ✅ MFA — rota ÚNICA acessível a qualquer perfil autenticado.
+                FIX: antes havia /mfa duplicada em cada bloco; o React Router
+                casava sempre com a do bloco CLIENTE (first-match) e
+                redirecionava a empresa de volta para /empresa. Agora é uma
+                rota só, fora dos blocos por perfil. */}
+            <Route element={<ProtectedRoute profiles={['cliente', 'empresa', 'superadmin']} />}>
+              <Route path="/mfa" element={<MfaSettingsPage />} />
+            </Route>
 
             {/* Cliente (customer_id !== null) */}
             <Route element={<ProtectedRoute profiles={['cliente']} />}>

@@ -9,7 +9,7 @@ import NotificationsBell from '../components/notifications/NotificationsBell';
 import { Button } from '../components/ui/button';
 import { ModeToggle } from '../components/mode-toggle';
 import {
-  Package, ShoppingCart, TicketIcon, MessageCircle, CreditCard, Store, Zap, LogOut,
+  Package, ShoppingCart, TicketIcon, MessageCircle, CreditCard, Store, Zap, LogOut, ShieldCheck,
 } from 'lucide-react';
 
 const navLinks = [
@@ -18,6 +18,8 @@ const navLinks = [
   { label: 'Tickets', href: '/tickets', icon: TicketIcon },
   { label: 'Chat', href: '/chat', icon: MessageCircle },
   { label: 'Financeiro', href: '/financeiro', icon: CreditCard },
+  // ✅ Segurança (MFA) — acessível a todos os clientes
+  { label: 'Segurança', href: '/mfa', icon: ShieldCheck },
 ];
 
 export default function ClientLayout() {

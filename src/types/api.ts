@@ -71,6 +71,26 @@ export interface UserInfo {
   permissions: string[]; // códigos de permissão efetivos (RBAC)
 }
 
+// ✅ Resposta do login quando o usuário tem MFA ativo — o frontend deve
+// exibir o campo de código e chamar verifyMfaLogin com o challenge_token.
+export interface MfaChallengeResponse {
+  mfa_required: boolean;
+  challenge_token: string;
+  email: string;
+}
+
+// ✅ Validação do segundo fator no login (código TOTP ou recovery code).
+export interface MfaLoginVerifyRequest {
+  challenge_token: string;
+  code: string;
+}
+
+// ✅ Desativação do MFA: exige senha atual OU código TOTP (pelo menos um).
+export interface MfaDisableRequest {
+  password?: string | null;
+  code?: string | null;
+}
+
 export interface MfaSetupResponse {
   secret: string;
   qr_code: string;

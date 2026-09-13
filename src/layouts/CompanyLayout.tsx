@@ -11,7 +11,7 @@ import { ModeToggle } from '../components/mode-toggle';
 import {
   LayoutDashboard, Package, Users, ShoppingBag, UserCog, TicketIcon,
   MessageCircle, CreditCard, Zap, LogOut, FolderTree, BadgePercent, Percent,
-  Menu, X,
+  Menu, X, ShieldCheck,
 } from 'lucide-react';
 
 const menuItems = [
@@ -26,6 +26,8 @@ const menuItems = [
   { label: 'Tickets', href: '/empresa/tickets', icon: TicketIcon, permission: PERMISSIONS.TICKET_READ },
   { label: 'Chat', href: '/empresa/chat', icon: MessageCircle, permission: PERMISSIONS.CHAT_READ },
   { label: 'Financeiro', href: '/empresa/financeiro', icon: CreditCard, permission: PERMISSIONS.FINANCIAL_READ },
+  // ✅ Segurança (MFA) — acessível a todos da empresa (sem permission)
+  { label: 'Segurança', href: '/mfa', icon: ShieldCheck },
 ];
 
 export default function CompanyLayout() {
