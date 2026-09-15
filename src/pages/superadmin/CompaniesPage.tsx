@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Building2, Plus, Search } from 'lucide-react';
+import { Building2, Loader2, Pencil, Plus, Power, RotateCcw, Search } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
-import type { Company, CompanyPage } from '../../types/api';
+import type { Company, CompanyPage, CompanyUpdate } from '../../types/api';
 import { isValidHexColor } from '../../lib/branding';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -13,23 +13,67 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../../components/ui/dialog';
 
+const PAGE_SIZE = 20;
+
+/** Formulário de criação de empresa (CompanyCreateRequest). */
 interface CompanyForm {
   name: string;
   cnpj: string;
   slug: string;
   domain: string;
-  admin_email: string;
-  admin_full_name: string;
   primary_color: string;
   secondary_color: string;
-  logo_url: string;
-  favicon_url: string;
+  admin_email: string;
+  admin_full_name: string;
 }
 
-const emptyForm: CompanyForm = {
-  name: '', cnpj: '', slug: '', domain: '', admin_email: '', admin_full_name: '',
-  primary_color: '#2563eb', secondary_color: '#0f172a', logo_url: '', favicon_url: '',
-};
+/** Formulário de edição (CompanyUpdate — sem cnpj, sem admin). */
+interface CompanyEditForm {
+  name: string;
+  slug: string;
+  domain: string;
+  logo_url: string;
+  favicon_url: string;
+  primary_color: string;
+  secondary_color: string;
+}
+
+const emptyForm = (): CompanyForm => ({
+  name: '', cnpj: '', slug: '', domain: '',
+  primary_color: '', secondary_color: '', admin_email: '', admin_full_name: '',
+});
+
+/** Preenche o form de edição a partir da empresa (valores atuais). */
+const editFormFrom = (c: Company): CompanyEditForm => ({
+  name: c.name,
+  slug: c.slug,
+  domain: c.domain ?? '',
+  logo_url: c.logo_url ?? '',
+  favicon_url: c.favicon_url ?? '',
+  primary_color: c.primary_color ?? '',
+  secondary_color: c.secondary_color ?? '',
+});
+
+/**
+ * ✅ Formata o CNPJ para exibição: 00.000.000/0000-00.
+ * Se o valor não tiver 14 dígitos, devolve como veio (sem inventar).
+ */
+function formatCNPJ(value: string | null | undefined): string {
+  if (!value) return '—';
+  const digits = value.replace(/\D/g, '');
+  if (digits.length !== 14) return value;
+  return digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+}
+
+/** Data ISO 8601 UTC → local (pt-BR). */
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  }).format(d);
+}
 
 export default function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -37,22 +81,42 @@ export default function CompaniesPage() {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
+
+  // Busca (debounce)
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<CompanyForm>(emptyForm);
+
+  // Criação
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState<CompanyForm>(emptyForm());
+  const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  // Status (inativar/reativar)
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+
+  // Edição (PATCH /companies/{id})
+  const [editFor, setEditFor] = useState<Company | null>(null);
+  const [editForm, setEditForm] = useState<CompanyEditForm>(editFormFrom({} as Company));
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
-    const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
+    const t = window.setTimeout(() => {
+      setSearchDebounced(search.trim());
+      setPage(1);
+    }, 350);
     return () => window.clearTimeout(t);
   }, [search]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (p: number) => {
     setLoading(true);
     try {
-      const data = await api.get<CompanyPage>('/companies', { page, page_size: 20, search: searchDebounced || undefined });
+      const data = await api.get<CompanyPage>('/companies', {
+        page: p,
+        page_size: PAGE_SIZE,
+        search: searchDebounced || undefined,
+      });
       setCompanies(data.items);
       setTotal(data.total);
       setPages(data.pages || 1);
@@ -61,204 +125,405 @@ export default function CompaniesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, searchDebounced]);
+  }, [searchDebounced]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(page); }, [page, load]);
 
-  const openCreate = () => {
-    setForm(emptyForm);
-    setError(null);
-    setOpen(true);
-  };
+  const setField = (key: keyof CompanyForm) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
-  const set = (field: keyof CompanyForm) =>
-    (e: React.ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, [field]: e.target.value }));
+  const setEditField = (key: keyof CompanyEditForm) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setEditForm((prev) => ({ ...prev, [key]: e.target.value }));
 
+  // ── Criar empresa ──
   const validate = (): string | null => {
-    if (form.name.trim().length < 2) return 'Informe o nome da empresa.';
+    if (!form.name.trim()) return 'Informe o nome da empresa.';
     if (!form.cnpj.trim()) return 'Informe o CNPJ.';
-    if (!/^[a-z0-9-]+$/.test(form.slug.trim())) return 'Slug inválido (use minúsculas, números, hífen).';
-    if (form.primary_color && !isValidHexColor(form.primary_color)) return 'Cor primária inválida.';
-    if (form.secondary_color && !isValidHexColor(form.secondary_color)) return 'Cor secundária inválida.';
+    if (!form.slug.trim()) return 'Informe o slug.';
+    if (form.primary_color.trim() && !isValidHexColor(form.primary_color)) {
+      return 'Cor primária inválida (use #RRGGBB).';
+    }
+    if (form.secondary_color.trim() && !isValidHexColor(form.secondary_color)) {
+      return 'Cor secundária inválida (use #RRGGBB).';
+    }
     if (!form.admin_email.trim()) return 'Informe o e-mail do administrador.';
     if (!form.admin_full_name.trim()) return 'Informe o nome do administrador.';
     return null;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
     const invalid = validate();
-    if (invalid) { setError(invalid); return; }
+    if (invalid) { setFormError(invalid); return; }
     setSaving(true);
-    setError(null);
+    setFormError(null);
     try {
       await api.post('/companies', {
         name: form.name.trim(),
         cnpj: form.cnpj.trim(),
         slug: form.slug.trim(),
-        domain: form.domain.trim() || null,
+        domain: form.domain.trim() || undefined,
+        primary_color: form.primary_color.trim() || undefined,
+        secondary_color: form.secondary_color.trim() || undefined,
         admin_email: form.admin_email.trim(),
         admin_full_name: form.admin_full_name.trim(),
-        primary_color: form.primary_color || null,
-        secondary_color: form.secondary_color || null,
-        logo_url: form.logo_url.trim() || null,
-        favicon_url: form.favicon_url.trim() || null,
       });
-      toast.success('Empresa criada e administrador convidado.');
-      setOpen(false);
-      setForm(emptyForm);
-      setPage(1);
-      load();
+      toast.success('Empresa criada. Convite enviado ao administrador.');
+      setCreateOpen(false);
+      setForm(emptyForm());
+      if (page !== 1) setPage(1);
+      else load(1);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Erro ao salvar empresa.');
+      setFormError(err instanceof ApiError ? err.message : 'Erro ao criar a empresa.');
     } finally {
       setSaving(false);
     }
   };
 
+  // ── Editar empresa (PATCH /companies/{id} — Super Admin) ──
+  const openEdit = (c: Company) => {
+    setEditFor(c);
+    setEditForm(editFormFrom(c));
+    setEditError(null);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editFor || editing) return;
+    if (!editForm.name.trim()) { setEditError('Informe o nome da empresa.'); return; }
+    if (!editForm.slug.trim()) { setEditError('Informe o slug.'); return; }
+    if (editForm.primary_color.trim() && !isValidHexColor(editForm.primary_color)) {
+      setEditError('Cor primária inválida (use #RRGGBB).'); return;
+    }
+    if (editForm.secondary_color.trim() && !isValidHexColor(editForm.secondary_color)) {
+      setEditError('Cor secundária inválida (use #RRGGBB).'); return;
+    }
+
+    setEditing(true);
+    setEditError(null);
+    try {
+      // Só envia os campos preenchidos; vazio = omite (backend mantém o atual).
+      const payload: CompanyUpdate = {
+        name: editForm.name.trim(),
+        slug: editForm.slug.trim(),
+        domain: editForm.domain.trim() || undefined,
+        logo_url: editForm.logo_url.trim() || undefined,
+        favicon_url: editForm.favicon_url.trim() || undefined,
+        primary_color: editForm.primary_color.trim() || undefined,
+        secondary_color: editForm.secondary_color.trim() || undefined,
+      };
+      const updated = await api.patch<Company>(`/companies/${editFor.id}`, payload);
+      setCompanies((prev) =>
+        prev.map((item) => (item.id === editFor.id ? updated : item)),
+      );
+      toast.success('Empresa atualizada.');
+      setEditFor(null);
+    } catch (err) {
+      setEditError(err instanceof ApiError ? err.message : 'Erro ao atualizar a empresa.');
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  // ── Inativar / Reativar (PATCH /companies/{id}/status — Super Admin) ──
+  const toggleStatus = async (c: Company) => {
+    const action = c.status === 'active' ? 'inativar' : 'reativar';
+    const warn =
+      c.status === 'active'
+        ? `Inativar a empresa "${c.name}"?\n\nTodos os usuários do tenant serão desativados e as sessões revogadas. Os acessos ao portal serão bloqueados imediatamente.`
+        : `Reativar a empresa "${c.name}"?`;
+    if (!window.confirm(warn)) return;
+
+    setStatusUpdatingId(c.id);
+    try {
+      const updated = await api.patch<Company>(`/companies/${c.id}/status`, {
+        status: c.status === 'active' ? 'inactive' : 'active',
+      });
+      setCompanies((prev) =>
+        prev.map((item) => (item.id === c.id ? updated : item)),
+      );
+      toast.success(action === 'inativar' ? 'Empresa inativada.' : 'Empresa reativada.');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao alterar o status.');
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  };
+
+  const resetForm = () => {
+    setForm(emptyForm());
+    setFormError(null);
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      {/* Header */}
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Empresas</h1>
-          <p className="text-sm text-muted-foreground">Gerencie tenants, branding e logomarcas.</p>
+          <h1 className="text-2xl font-bold text-foreground">Empresas</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Gerencie as empresas (tenants) da plataforma. Ao inativar, os acessos
+            do tenant são bloqueados imediatamente.
+          </p>
         </div>
-        <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Nova empresa</Button>
+        <Button onClick={() => { resetForm(); setCreateOpen(true); }}>
+          <Plus className="mr-2 h-4 w-4" /> Nova empresa
+        </Button>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input className="pl-9" placeholder="Buscar por nome, slug ou CNPJ…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+      {/* Busca */}
+      <div className="mb-4">
+        <div className="relative max-w-sm">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome, CNPJ ou slug…"
+            className="pl-8"
+          />
+        </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Empresas <span className="font-normal text-muted-foreground">({total})</span></CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-          {loading ? (
-            <p className="col-span-full py-10 text-center text-muted-foreground">Carregando…</p>
-          ) : companies.length === 0 ? (
-            <p className="col-span-full py-10 text-center text-muted-foreground">Nenhuma empresa encontrada.</p>
-          ) : (
-            companies.map((c) => {
-              const logo = (c as Company & { logo_url?: string | null }).logo_url;
-              return (
-                <Card key={c.id} className="overflow-hidden">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    {logo ? (
-                      <img src={logo} alt={c.name} className="h-12 w-12 rounded-lg object-contain" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                        <Building2 className="h-6 w-6 text-primary" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{c.name}</p>
-                      <p className="truncate font-mono text-xs text-muted-foreground">{c.slug}</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <Badge variant={c.status === 'active' ? 'default' : 'secondary'}>
-                          {c.status === 'active' ? 'Ativa' : 'Inativa'}
-                        </Badge>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })
-          )}
-        </CardContent>
-      </Card>
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando empresas…
+        </div>
+      ) : companies.length === 0 ? (
+        <div className="py-20 text-center">
+          <Building2 className="mx-auto mb-4 h-16 w-16 text-muted-foreground/50" />
+          <h3 className="text-lg font-semibold text-muted-foreground">Nenhuma empresa</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Crie a primeira empresa para começar.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {companies.map((c) => (
+            <Card key={c.id}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="truncate text-base">{c.name}</CardTitle>
+                  <Badge variant={c.status === 'active' ? 'default' : 'secondary'}>
+                    {c.status === 'active' ? 'Ativa' : 'Inativa'}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 pt-0 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="font-mono">{c.slug}</span>
+                    {/* ✅ CNPJ formatado (00.000.000/0000-00) */}
+                    {c.cnpj && <span>{formatCNPJ(c.cnpj)}</span>}
+                    {c.domain && <span>{c.domain}</span>}
+                    <span>Criada em {formatDate(c.created_at)}</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={statusUpdatingId === c.id}
+                    onClick={() => openEdit(c)}
+                    aria-label={`Editar ${c.name}`}
+                  >
+                    <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
+                  </Button>
+                  {c.status === 'active' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={statusUpdatingId === c.id}
+                      onClick={() => toggleStatus(c)}
+                      aria-label={`Inativar ${c.name}`}
+                    >
+                      {statusUpdatingId === c.id
+                        ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        : <Power className="mr-1 h-3.5 w-3.5" />}
+                      Inativar
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      disabled={statusUpdatingId === c.id}
+                      onClick={() => toggleStatus(c)}
+                      aria-label={`Reativar ${c.name}`}
+                    >
+                      {statusUpdatingId === c.id
+                        ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        : <RotateCcw className="mr-1 h-3.5 w-3.5" />}
+                      Reativar
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
 
-      {pages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">Página {page} de {pages}</p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
-            <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
+          {/* Paginação */}
+          <div className="flex items-center justify-between pt-2 text-sm text-muted-foreground">
+            <span>
+              {total} empresa(s) · página {page} de {pages}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Anterior
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= pages || loading}
+                onClick={() => setPage((p) => Math.min(pages, p + 1))}
+              >
+                Próxima
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Modal de criação */}
-      <Dialog open={open} onOpenChange={(o) => { if (!o) setOpen(false); }}>
+      {/* ── Diálogo: editar empresa (PATCH /companies/{id}) ── */}
+      <Dialog open={!!editFor} onOpenChange={(o) => { if (!editing && !o) setEditFor(null); }}>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar empresa — {editFor?.name}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdate} className="space-y-4" noValidate>
+            <div className="space-y-2">
+              <Label htmlFor="e-name">Nome *</Label>
+              <Input id="e-name" value={editForm.name} onChange={setEditField('name')} required />
+            </div>
+
+            {/* ✅ CNPJ: visível e formatado, BLOQUEADO para edição (não editável
+                pelo PATCH /companies/{id}). readOnly permite copiar o valor. */}
+            <div className="space-y-2">
+              <Label htmlFor="e-cnpj">CNPJ</Label>
+              <Input
+                id="e-cnpj"
+                value={formatCNPJ(editFor?.cnpj)}
+                readOnly
+                aria-readonly="true"
+                tabIndex={-1}
+                className="cursor-not-allowed bg-muted text-muted-foreground focus-visible:ring-0"
+              />
+              <p className="text-xs text-muted-foreground">Este campo não pode ser alterado.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="e-slug">Slug *</Label>
+                <Input id="e-slug" value={editForm.slug} onChange={setEditField('slug')} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="e-domain">Domínio</Label>
+                <Input id="e-domain" value={editForm.domain} onChange={setEditField('domain')} placeholder="portal.minhaempresa.com.br" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="e-logo">Logo (URL)</Label>
+              <Input id="e-logo" value={editForm.logo_url} onChange={setEditField('logo_url')} placeholder="https://cdn.exemplo.com/logo.png" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="e-favicon">Favicon (URL)</Label>
+              <Input id="e-favicon" value={editForm.favicon_url} onChange={setEditField('favicon_url')} placeholder="https://cdn.exemplo.com/favicon.ico" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="e-primary">Cor primária (hex)</Label>
+                <Input id="e-primary" value={editForm.primary_color} onChange={setEditField('primary_color')} placeholder="#1976D2" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="e-secondary">Cor secundária (hex)</Label>
+                <Input id="e-secondary" value={editForm.secondary_color} onChange={setEditField('secondary_color')} placeholder="#388E3C" />
+              </div>
+            </div>
+
+            {/* ✅ Informações somente-leitura: status e data de criação.
+                O status é alterado pelos botões Inativar/Reativar do cartão. */}
+            <p className="text-xs text-muted-foreground">
+              Status: {editFor?.status === 'active' ? 'Ativa' : 'Inativa'} · Criada em{' '}
+              {formatDate(editFor?.created_at)}. Para alterar o status, use os botões do cartão.
+            </p>
+
+            {editError && (
+              <p role="alert" className="text-sm text-destructive">{editError}</p>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditFor(null)} disabled={editing}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={editing}>
+                {editing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                {editing ? 'Salvando…' : 'Salvar'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Diálogo: nova empresa ── */}
+      <Dialog open={createOpen} onOpenChange={(o) => { if (!saving) setCreateOpen(o); }}>
         <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nova empresa</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <form onSubmit={handleCreate} className="space-y-4" noValidate>
+            <div className="space-y-2">
+              <Label htmlFor="c-name">Nome *</Label>
+              <Input id="c-name" value={form.name} onChange={setField('name')} required />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="c-name">Nome *</Label>
-                <Input id="c-name" value={form.name} onChange={set('name')} required />
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="c-cnpj">CNPJ *</Label>
-                <Input id="c-cnpj" value={form.cnpj} onChange={set('cnpj')} required />
+                <Input id="c-cnpj" value={form.cnpj} onChange={setField('cnpj')} placeholder="00.000.000/0000-00" required />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="c-slug">Slug *</Label>
-                <Input id="c-slug" value={form.slug} onChange={set('slug')} placeholder="minha-empresa" required />
+                <Input id="c-slug" value={form.slug} onChange={setField('slug')} placeholder="minha-empresa" required />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="c-domain">Domínio (opcional)</Label>
+              <Input id="c-domain" value={form.domain} onChange={setField('domain')} placeholder="portal.minhaempresa.com.br" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="c-primary">Cor primária (hex)</Label>
+                <Input id="c-primary" value={form.primary_color} onChange={setField('primary_color')} placeholder="#1976D2" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="c-domain">Domínio</Label>
-                <Input id="c-domain" value={form.domain} onChange={set('domain')} placeholder="empresa.com.br" />
+                <Label htmlFor="c-secondary">Cor secundária (hex)</Label>
+                <Input id="c-secondary" value={form.secondary_color} onChange={setField('secondary_color')} placeholder="#388E3C" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="c-admin">E-mail do admin *</Label>
-                <Input id="c-admin" type="email" value={form.admin_email} onChange={set('admin_email')} required />
+                <Label htmlFor="c-admin-email">E-mail do admin *</Label>
+                <Input id="c-admin-email" type="email" value={form.admin_email} onChange={setField('admin_email')} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="c-adminname">Nome do admin *</Label>
-                <Input id="c-adminname" value={form.admin_full_name} onChange={set('admin_full_name')} required />
+                <Label htmlFor="c-admin-name">Nome do admin *</Label>
+                <Input id="c-admin-name" value={form.admin_full_name} onChange={setField('admin_full_name')} required />
               </div>
             </div>
-
-            {/* Branding: logo + favicon + cores */}
-            <div className="rounded-lg border p-4">
-              <p className="mb-3 text-sm font-medium">Identidade visual (logo aparece no topo do sistema)</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="c-logo">URL da LOGO *</Label>
-                  <Input id="c-logo" value={form.logo_url} onChange={set('logo_url')} placeholder="https://cdn.../logo.png" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="c-favicon">URL do favicon</Label>
-                  <Input id="c-favicon" value={form.favicon_url} onChange={set('favicon_url')} placeholder="https://cdn.../favicon.png" />
-                </div>
-              </div>
-              {form.logo_url && (
-                <div className="mt-3 flex items-center gap-3 rounded-md bg-muted/40 p-3">
-                  <img src={form.logo_url} alt="Prévia da logo" className="h-12 w-12 rounded-lg object-contain" referrerPolicy="no-referrer" />
-                  <span className="text-xs text-muted-foreground">Prévia — a logo aparecerá no canto superior esquerdo do painel da empresa e do cliente.</span>
-                </div>
-              )}
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="c-pcolor">Cor primária</Label>
-                  <div className="flex items-center gap-2">
-                    <input type="color" className="h-9 w-12 rounded border" value={form.primary_color} onChange={(e) => setForm((p) => ({ ...p, primary_color: e.target.value }))} />
-                    <Input id="c-pcolor" value={form.primary_color} onChange={set('primary_color')} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="c-scolor">Cor secundária</Label>
-                  <div className="flex items-center gap-2">
-                    <input type="color" className="h-9 w-12 rounded border" value={form.secondary_color} onChange={(e) => setForm((p) => ({ ...p, secondary_color: e.target.value }))} />
-                    <Input id="c-scolor" value={form.secondary_color} onChange={set('secondary_color')} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+            {formError && (
+              <p role="alert" className="text-sm text-destructive">{formError}</p>
+            )}
             <DialogFooter>
-              <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Criar empresa'}</Button>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={saving}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Criando…' : 'Criar empresa'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

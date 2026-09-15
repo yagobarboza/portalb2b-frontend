@@ -132,6 +132,10 @@ export interface Company {
   status: CompanyStatus;
   primary_color: string | null;
   secondary_color: string | null;
+  // ✅ Logo/favicon (o CompanyRead do backend retorna ambos) — usados para
+  // pré-preencher o formulário de edição no Super Admin. São URLs públicas.
+  logo_url: string | null;
+  favicon_url: string | null;
   created_at: string;
 }
 
@@ -156,6 +160,22 @@ export interface CompanyCreateRequest {
   secondary_color?: string | null;
   admin_email: string;
   admin_full_name: string;
+}
+
+// ✅ NOVO — espelho de schemas/company.py CompanyUpdate (PATCH /companies/{id}).
+// Exclusivo Super Admin. Todos os campos são opcionais: o backend aplica
+// `exclude_unset=True, exclude_none=True`, então envie apenas o que mudou —
+// os campos omitidos permanecem com o valor atual. Obs.: campos vazios ("")
+// NÃO limpam o valor (por causa do exclude_none); para limpar, use " " ou
+// trate no backend. CNPJ NÃO é editável por esta rota.
+export interface CompanyUpdate {
+  name?: string | null;
+  slug?: string | null;
+  domain?: string | null;
+  logo_url?: string | null;      // URL pública (R2/CDN)
+  favicon_url?: string | null;   // URL pública (R2/CDN)
+  primary_color?: string | null; // ^#[0-9a-fA-F]{6}$
+  secondary_color?: string | null;
 }
 
 // ─────────────────────────── Catalog (schemas/catalog.py) ───────────────────
