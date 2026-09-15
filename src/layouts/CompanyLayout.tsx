@@ -12,7 +12,7 @@ import { ModeToggle } from '../components/mode-toggle';
 import {
   LayoutDashboard, Package, Users, ShoppingBag, UserCog, TicketIcon,
   MessageCircle, CreditCard, Zap, FolderTree, BadgePercent, Percent,
-  Menu, X,
+  PlugZap, Menu, X,
 } from 'lucide-react';
 
 // ✅ Módulos do portal. Configurações do usuário (MFA) NÃO ficam aqui —
@@ -29,6 +29,9 @@ const menuItems = [
   { label: 'Tickets', href: '/empresa/tickets', icon: TicketIcon, permission: PERMISSIONS.TICKET_READ },
   { label: 'Chat', href: '/empresa/chat', icon: MessageCircle, permission: PERMISSIONS.CHAT_READ },
   { label: 'Financeiro', href: '/empresa/financeiro', icon: CreditCard, permission: PERMISSIONS.FINANCIAL_READ },
+  // ✅ Integrações ERP — o backend exige apenas usuário da empresa (staff),
+  // sem permissão granular; por isso não há `permission` aqui.
+  { label: 'Integrações', href: '/empresa/integracoes', icon: PlugZap },
 ];
 
 export default function CompanyLayout() {

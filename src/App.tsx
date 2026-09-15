@@ -21,6 +21,8 @@ import CategoriesPage from './pages/company/CategoriesPage';
 import PricingPage from './pages/company/PricingPage';
 import QuantityDiscountsPage from './pages/company/QuantityDiscountsPage'; // ✅ descontos por quantidade
 import CompanyFinancialPage from './pages/company/CompanyFinancialPage';
+// ✅ Integrações ERP (agente do cliente → chave de API → ingestão de estoque).
+import IntegrationsPage from './pages/company/IntegrationsPage';
 import CompaniesPage from './pages/superadmin/CompaniesPage';
 // ✅ Configurações do PERFIL (contém o MFA) — acessível a todos os perfis
 // logados, via menu do usuário (avatar), DENTRO do layout de cada perfil.
@@ -71,6 +73,9 @@ export default function App() {
                 <Route path="/empresa/precos" element={<PricingPage />} />
                 <Route path="/empresa/descontos" element={<QuantityDiscountsPage />} />
                 <Route path="/empresa/financeiro" element={<CompanyFinancialPage />} />
+                {/* ✅ Integrações ERP — cria integração, gera/revoga a chave do
+                    agente e consulta as execuções. Só usuários da empresa. */}
+                <Route path="/empresa/integracoes" element={<IntegrationsPage />} />
                 {/* ✅ Configurações do perfil (empresa) — caminho PRÓPRIO,
                     dentro do CompanyLayout. FIX: antes era /perfil duplicada,
                     que caía no bloco cliente (first-match) e redirecionava. */}

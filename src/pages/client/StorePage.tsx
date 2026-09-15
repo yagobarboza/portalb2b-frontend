@@ -16,6 +16,7 @@ import {
 } from '../../components/ui/select';
 
 type SortOption = 'relevance' | 'price-asc' | 'price-desc' | 'name-asc';
+
 // ✅ Paginação da vitrine: 50 produtos por página.
 const PAGE_SIZE = 50;
 // ✅ Quantos números de página mostrar ao redor da página atual (janela).
@@ -104,6 +105,7 @@ export default function StorePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { addItem, registerProduct } = useCart();
+
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,12 +114,15 @@ export default function StorePage() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
   const [adding, setAdding] = useState(false);
+
   // ✅ Paginação.
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
+
   // ✅ Campo "Ir para página".
   const [jumpTo, setJumpTo] = useState('');
+
   // Quantidade por produto no CARD (como ecommerce) — default 1.
   const [qtys, setQtys] = useState<Record<string, number>>({});
 
@@ -184,6 +189,7 @@ export default function StorePage() {
       setLoading(false);
     }
   }, [page, searchDebounced, selectedCategory, sortBy, user?.customer_id, registerProduct]);
+
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
   // ✅ Ir para uma página específica (valida entre 1 e pages).
@@ -268,7 +274,8 @@ export default function StorePage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {/* ✅ 4 produtos por fileira no máximo (desktop) — cards maiores */}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {products.map((p) => {
               const stock = stockOf(p);
               const out = stock <= 0;
@@ -278,7 +285,7 @@ export default function StorePage() {
                 <Card key={p.id} className="flex flex-col overflow-hidden">
                   <button
                     type="button"
-                    className="flex h-36 w-full items-center justify-center overflow-hidden bg-muted/50"
+                    className="flex h-48 w-full items-center justify-center overflow-hidden bg-muted/50"
                     onClick={() => openProduct(p.id)}
                   >
                     {isSafeImageUrl(p.image_url) ? (
@@ -290,13 +297,13 @@ export default function StorePage() {
                         loading="lazy"
                       />
                     ) : (
-                      <Package className="h-10 w-10 text-muted-foreground/60" />
+                      <Package className="h-12 w-12 text-muted-foreground/60" />
                     )}
                   </button>
-                  <CardContent className="flex flex-1 flex-col gap-2 p-3">
+                  <CardContent className="flex flex-1 flex-col gap-2 p-4">
                     <button type="button" className="text-left" onClick={() => openProduct(p.id)}>
-                      <h3 className="line-clamp-2 font-semibold leading-tight">{p.name}</h3>
-                      <p className="text-xs text-muted-foreground">
+                      <h3 className="line-clamp-2 text-base font-semibold leading-snug">{p.name}</h3>
+                      <p className="text-sm text-muted-foreground">
                         {p.brand ?? ''}{p.unit ? ` · ${p.unit}` : ''}
                       </p>
                     </button>
@@ -308,7 +315,7 @@ export default function StorePage() {
                             <span className="block text-xs leading-none text-muted-foreground line-through">
                               De {formatCurrency(base)}
                             </span>
-                            <span className="mt-0.5 block text-lg font-bold leading-none">
+                            <span className="mt-0.5 block text-xl font-bold leading-none">
                               Por {formatCurrency(final)}
                             </span>
                             <span className="mt-1 block">
@@ -316,7 +323,7 @@ export default function StorePage() {
                             </span>
                           </>
                         ) : (
-                          <span className="block text-lg font-bold leading-none">
+                          <span className="block text-xl font-bold leading-none">
                             {formatCurrency(base)}
                           </span>
                         )}
@@ -386,7 +393,6 @@ export default function StorePage() {
               <p className="text-sm text-muted-foreground">
                 Página {page} de {pages} · {total} produto(s)
               </p>
-
               <div className="flex flex-wrap items-center justify-center gap-1">
                 <Button
                   variant="outline"
@@ -397,7 +403,6 @@ export default function StorePage() {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-
                 {/* ✅ Números de página (janela dinâmica, com "…") */}
                 {pageWindow(page, pages).map((item, idx) =>
                   item === '…' ? (
@@ -416,7 +421,6 @@ export default function StorePage() {
                     </Button>
                   ),
                 )}
-
                 <Button
                   variant="outline"
                   size="icon"
@@ -427,7 +431,6 @@ export default function StorePage() {
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-
               {/* ✅ Campo "Ir para página" */}
               <form onSubmit={handleJump} className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Ir para</span>
