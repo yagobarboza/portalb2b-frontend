@@ -159,6 +159,14 @@ export const api = {
   patch: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, 'body'>) =>
     request<T>('PATCH', path, { ...options, body }),
 
+  /**
+   * ✅ PUT — usado em endpoints de configuração que substituem um recurso
+   * inteiro (ex.: PUT /integrations/{id}/api-config).
+   * Assinatura idêntica ao `patch` (o backend distingue pelo verbo HTTP).
+   */
+  put: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, 'body'>) =>
+    request<T>('PUT', path, { ...options, body }),
+
   delete: <T>(path: string, params?: Record<string, unknown>) =>
     request<T>('DELETE', path, { params }),
 
