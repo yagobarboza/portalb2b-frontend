@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom'; // ✅ navegação para a página de edição
 import { toast } from 'sonner';
 import { FileUp, Link2, Package, Pencil, Plus, Search, Upload } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
@@ -73,6 +74,7 @@ function StatusChip({ active }: { active: boolean }) {
   );
 }
 
+/** Formulário do diálogo de CADASTRO (a edição vive em /empresa/produtos/:id). */
 interface ProductForm {
   sku: string;
   code: string;
@@ -105,6 +107,8 @@ function PageHeading({ title, description, action }: { title: string; descriptio
 }
 
 export default function CatalogPage() {
+  const navigate = useNavigate(); // ✅ abre a página dedicada de edição
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
@@ -116,7 +120,6 @@ export default function CatalogPage() {
   const [searchDebounced, setSearchDebounced] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -162,8 +165,8 @@ export default function CatalogPage() {
       setLoading(false);
     }
   }, [page, searchDebounced, categoryFilter]);
-  useEffect(() => { loadProducts(); }, [loadProducts]);
 
+  useEffect(() => { loadProducts(); }, [loadProducts]);
   useEffect(() => () => revokeObjectPreview(preview), [preview]);
 
   const resetForm = () => {
@@ -211,7 +214,10 @@ export default function CatalogPage() {
     if (!form.price.trim() || Number.isNaN(price) || price < 0) return 'Informe um preço válido (≥ 0).';
     if (form.stock.trim()) {
       const stock = Number(form.stock);
-      if (Number.isNaN(stock) || stock < 0) return 'Estoque inválido (≥ 0).';
+      // ✅ Estoque INTEIRO (o backend rejeita 15.5 com 422) — valida antes de enviar.
+      if (Number.isNaN(stock) || stock < 0 || !Number.isInteger(stock)) {
+        return 'Estoque deve ser um número inteiro (≥ 0).';
+      }
     }
     // ✅ URL externa (opcional) precisa ser http(s).
     if (form.image_url.trim() && !isHttpUrl(form.image_url)) {
@@ -235,22 +241,6 @@ export default function CatalogPage() {
     image_url: form.image_url.trim(),
   });
 
-  const persistProduct = async (payload: ReturnType<typeof buildPayload>, productId?: string) => {
-    const saved = productId
-      ? await api.patch<Product>(`/catalog/products/${productId}`, payload)
-      : await api.post<Product>('/catalog/products', payload);
-    // ✅ Upload para o R2 só quando NÃO há URL externa informada.
-    if (imageFile && !payload.image_url) {
-      try {
-        await uploadProductImage(saved.id, imageFile);
-        toast.success('Imagem enviada com sucesso.');
-      } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : 'Produto salvo, mas a imagem não pôde ser enviada.');
-      }
-    }
-    return saved;
-  };
-
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
@@ -259,7 +249,16 @@ export default function CatalogPage() {
     setSaving(true);
     setFormError(null);
     try {
-      await persistProduct(buildPayload());
+      const saved = await api.post<Product>('/catalog/products', buildPayload());
+      // ✅ Upload para o R2 só quando NÃO há URL externa informada.
+      if (imageFile && !saved.image_url) {
+        try {
+          await uploadProductImage(saved.id, imageFile);
+          toast.success('Imagem enviada com sucesso.');
+        } catch (err) {
+          toast.error(err instanceof ApiError ? err.message : 'Produto salvo, mas a imagem não pôde ser enviada.');
+        }
+      }
       toast.success('Produto cadastrado.');
       setCreateOpen(false);
       resetForm();
@@ -271,49 +270,8 @@ export default function CatalogPage() {
     }
   };
 
-  const handleEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editProduct || saving) return;
-    const invalid = validate();
-    if (invalid) { setFormError(invalid); return; }
-    setSaving(true);
-    setFormError(null);
-    try {
-      await persistProduct(buildPayload(), editProduct.id);
-      toast.success('Produto atualizado.');
-      setEditProduct(null);
-      resetForm();
-      loadProducts();
-    } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Erro ao atualizar produto.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const openEdit = (p: Product) => {
-    setEditProduct(p);
-    setForm({
-      sku: p.sku,
-      code: p.code ?? '',
-      name: p.name,
-      brand: p.brand ?? '',
-      category_id: p.category_id ?? '',
-      unit: p.unit ?? '',
-      price: String(p.price),
-      stock: p.stock === null || p.stock === undefined ? '' : String(stockInt(p.stock)),
-      description: p.description ?? '',
-      // ✅ Só a URL EXTERNA crua (nunca a do R2) — campo vazio se não houver.
-      image_url: p.image_url_external ?? '',
-    });
-    setFormError(null);
-    setImageFile(null);
-    setImageError(null);
-    setPreview(null);
-  };
-
-  /** Bloco de imagem reutilizado nos dois diálogos (upload + URL externa). */
-  const imageBlock = (fallbackUrl?: string | null, fallbackAlt?: string) => (
+  /** Bloco de imagem do cadastro (upload para o R2 + URL externa). */
+  const imageBlock = (
     <div className="space-y-3 rounded-lg border border-dashed p-4">
       <input
         ref={fileRef}
@@ -327,8 +285,6 @@ export default function CatalogPage() {
           <img src={preview} alt="Prévia da imagem" className="mx-auto h-24 rounded object-cover" />
         ) : isHttpUrl(form.image_url) ? (
           <img src={form.image_url} alt="Imagem externa" className="mx-auto h-24 rounded object-cover" referrerPolicy="no-referrer" />
-        ) : isSafeImageUrl(fallbackUrl) ? (
-          <img src={fallbackUrl} alt={fallbackAlt ?? 'Imagem do produto'} className="mx-auto h-24 rounded object-cover" referrerPolicy="no-referrer" />
         ) : (
           <Upload className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
         )}
@@ -337,7 +293,6 @@ export default function CatalogPage() {
         </Button>
         {imageError && <p role="alert" className="mt-2 text-xs text-destructive">{imageError}</p>}
       </div>
-
       {/* ✅ URL externa (CDN do cliente) — não consome espaço do R2 */}
       <div className="space-y-2 border-t pt-3">
         <Label htmlFor="image-url" className="flex items-center gap-2">
@@ -428,7 +383,7 @@ export default function CatalogPage() {
                   onChange={setDescription}
                   rows={2}
                 />
-                {imageBlock()}
+                {imageBlock}
                 {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
                 <DialogFooter>
                   <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar'}</Button>
@@ -438,7 +393,6 @@ export default function CatalogPage() {
           </Dialog>
         }
       />
-
       {/* Filtros */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -465,7 +419,6 @@ export default function CatalogPage() {
           </Select>
         </div>
       </div>
-
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
@@ -524,7 +477,13 @@ export default function CatalogPage() {
                         <StatusChip active={p.status === 'active'} />
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button size="icon" variant="ghost" onClick={() => openEdit(p)} aria-label={`Editar ${p.name}`}>
+                        {/* ✅ Edição dedicada: navega para /empresa/produtos/:id */}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => navigate(`/empresa/produtos/${p.id}`)}
+                          aria-label={`Editar ${p.name}`}
+                        >
                           <Pencil className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -545,79 +504,6 @@ export default function CatalogPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Edição */}
-      <Dialog open={!!editProduct} onOpenChange={(o) => { if (!o) { setEditProduct(null); resetForm(); } }}>
-        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
-          <DialogHeader><DialogTitle>Editar produto</DialogTitle></DialogHeader>
-          {editProduct && (
-            <form onSubmit={handleEdit} className="space-y-4" noValidate>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-sku">SKU *</Label>
-                  <Input id="edit-sku" value={form.sku} onChange={setField('sku')} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-code">Código</Label>
-                  <Input id="edit-code" value={form.code} onChange={setField('code')} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-name">Nome *</Label>
-                <Input id="edit-name" value={form.name} onChange={setField('name')} required />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-brand">Marca</Label>
-                  <Input id="edit-brand" value={form.brand} onChange={setField('brand')} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-category">Categoria</Label>
-                  <Select
-                    value={form.category_id || NO_CATEGORY}
-                    onValueChange={(v) => setForm((prev) => ({ ...prev, category_id: v === NO_CATEGORY ? '' : v }))}
-                  >
-                    <SelectTrigger id="edit-category" className="w-full"><SelectValue placeholder="Selecione…" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_CATEGORY}>Sem categoria</SelectItem>
-                      {categories.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-price">Preço (R$) *</Label>
-                  <Input id="edit-price" type="number" step="0.01" min="0" value={form.price} onChange={setField('price')} required />
-                </div>
-                <div className="space-y-2">
-                  {/* ✅ step="1" */}
-                  <Label htmlFor="edit-stock">Estoque</Label>
-                  <Input id="edit-stock" type="number" step="1" min="0" inputMode="numeric" value={form.stock} onChange={setField('stock')} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-unit">Unidade</Label>
-                  <Input id="edit-unit" value={form.unit} onChange={setField('unit')} />
-                </div>
-              </div>
-              {/* ✅ Descrição com modo Texto/HTML + prévia sanitizada (Bloco Vitrine) */}
-              <DescriptionField
-                id="edit-description"
-                value={form.description}
-                onChange={setDescription}
-                rows={2}
-              />
-              {imageBlock(editProduct.image_url, editProduct.name)}
-              {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
-              <DialogFooter>
-                <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Salvar alterações'}</Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -15,6 +15,8 @@ import ChatPage from './pages/client/ChatPage';
 import FinancialPage from './pages/client/FinancialPage';
 // CatalogPage é um arquivo próprio — NÃO é exportado por CompanyPages.
 import CatalogPage from './pages/company/CatalogPage';
+// ✅ Página dedicada de EDIÇÃO de produto (estilo Tray/VTEX/Nuvemshop).
+import ProductEditPage from './pages/company/ProductEditPage';
 import CategoriesPage from './pages/company/CategoriesPage';
 import PricingPage from './pages/company/PricingPage';
 import QuantityDiscountsPage from './pages/company/QuantityDiscountsPage'; // ✅ descontos por quantidade
@@ -57,6 +59,9 @@ export default function App() {
               <Route element={<CompanyLayout />}>
                 <Route path="/empresa" element={<DashboardPage />} />
                 <Route path="/empresa/catalogo" element={<CatalogPage />} />
+                {/* ✅ Edição dedicada de produto — link vindo do botão "Editar"
+                    do catálogo. O backend (CATALOG_MANAGE + tenant) é a autoridade. */}
+                <Route path="/empresa/produtos/:id" element={<ProductEditPage />} />
                 <Route path="/empresa/categorias" element={<CategoriesPage />} />
                 <Route path="/empresa/clientes" element={<ClientsPage />} />
                 <Route path="/empresa/pedidos" element={<CompanyOrdersPage />} />
