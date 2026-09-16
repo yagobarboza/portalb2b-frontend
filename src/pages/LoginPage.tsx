@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { defaultPathForUser } from '../lib/constants';
 import { api, ApiError } from '../lib/api';
@@ -17,6 +17,22 @@ const RATE_LIMIT_LOCK_MS = 60_000; // 60s de bloqueio após 429
 interface MfaChallenge {
   challengeToken: string;
   email: string;
+}
+
+/** Site da desenvolvedora (link no rodapé). */
+const NYD_SITE = 'https://nydsoftwares.com.br';
+
+/**
+ * Cor primária do tenant. Sem domínio cadastrado (padrão) usa
+ * um preto suave — a página padrão é da nydSoftwares (degrade preto).
+ */
+function resolvePrimary(branding: CompanyBranding | null): string {
+  return branding?.primary_color?.trim() || '#1A1A1A';
+}
+
+/** Cor secundária do tenant. Padrão: preto absoluto (fim do degrade). */
+function resolveSecondary(branding: CompanyBranding | null): string {
+  return branding?.secondary_color?.trim() || '#000000';
 }
 
 export default function LoginPage() {
@@ -38,6 +54,19 @@ export default function LoginPage() {
 
   // Branding público resolvido pelo DOMÍNIO de acesso (pré-login).
   const [branding, setBranding] = useState<CompanyBranding | null>(null);
+
+  // ✅ TEMA LIGHT FORÇADO APENAS NO LOGIN.
+  // O shadcn/ui controla o tema pela classe `dark` no <html>. Este efeito
+  // remove a classe ao montar (garante light nesta página) e RESTAURA o
+  // tema do usuário ao desmontar — sem afetar o resto do sistema.
+  useEffect(() => {
+    const root = document.documentElement;
+    const wasDark = root.classList.contains('dark');
+    root.classList.remove('dark'); // força light
+    return () => {
+      if (wasDark) root.classList.add('dark'); // restaura o tema do usuário
+    };
+  }, []);
 
   // Se já autenticado, redireciona para a rota do perfil (evita tela duplicada).
   useEffect(() => {
@@ -62,6 +91,8 @@ export default function LoginPage() {
 
   const companyLogo = safeLogoUrl(branding);
   const companyName = branding?.name?.trim();
+  const primaryColor = resolvePrimary(branding);
+  const secondaryColor = resolveSecondary(branding);
 
   // Countdown do bloqueio de 429.
   useEffect(() => {
@@ -137,98 +168,207 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-3">
+    <div className="flex min-h-screen">
+      {/* ── Painel de marca (esquerda) — cores do tenant (ou preto padrão), oculto no mobile ── */}
+      <div
+        className="relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+        style={{ background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})` }}
+      >
+        {/* Camadas decorativas (brilho) */}
+        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-black/10 blur-3xl" />
+
+        <div className="relative z-10">
           {companyLogo ? (
-            <img src={companyLogo} alt={companyName ?? 'Logo'} className="h-14 w-14 rounded-lg object-contain" referrerPolicy="no-referrer" />
+            /* ✅ Logo da empresa — tamanho generoso no painel */
+            <img
+              src={companyLogo}
+              alt={companyName ?? 'Logo'}
+              className="h-16 w-16 rounded-xl bg-white/10 object-contain p-1"
+              referrerPolicy="no-referrer"
+            />
           ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <ShieldCheck className="h-7 w-7" />
-            </div>
+            /* ✅ Padrão (sem domínio): logo da nyd MAIOR, em branco sobre o preto */
+            <img
+              src="/svg-logo-nydsoftwares.svg"
+              alt="nydSoftwares"
+              className="h-16 w-16 object-contain brightness-0 invert"
+            />
           )}
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {companyName ?? 'Portal B2B'}
-          </h1>
         </div>
 
-        {mfaChallenge ? (
-          /* ✅ Passo MFA — segundo fator */
-          <form onSubmit={handleMfaVerify} className="space-y-4" noValidate>
-            <div className="space-y-2">
-              <Label htmlFor="mfa-code">Código de verificação</Label>
-              <Input
-                id="mfa-code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                autoFocus
-                placeholder="000000"
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value)}
-                disabled={mfaLoading}
-                className="h-11 rounded-lg text-center text-lg tracking-[0.3em]"
+        <div className="relative z-10 max-w-md">
+          <h2 className="text-4xl font-bold leading-tight tracking-tight">
+            {companyName ?? 'Portal B2B'}
+          </h2>
+          <p className="mt-4 text-lg text-white/80">
+            A plataforma completa para o seu comércio B2B — catálogo, pedidos,
+            financeiro e atendimento em um só lugar.
+          </p>
+          <div className="mt-8 flex items-center gap-2 text-sm text-white/70">
+            <Sparkles className="h-4 w-4" />
+            <span>Seguro, rápido e feito para crescer com você.</span>
+          </div>
+        </div>
+
+        {/* Atribuição — "nydSoftwares" clicável → site da NYD */}
+        <div className="relative z-10 flex items-center gap-2 text-xs text-white/70">
+          <img
+            src="/svg-logo-nydsoftwares.svg"
+            alt="nydSoftwares"
+            className="h-4 w-4 object-contain brightness-0 invert"
+          />
+          <span>
+            Desenvolvido por{' '}
+            <a
+              href={NYD_SITE}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-white underline-offset-2 hover:underline"
+            >
+              nydSoftwares
+            </a>
+          </span>
+        </div>
+      </div>
+
+      {/* ── Painel do formulário (direita) ── */}
+      <div className="flex w-full flex-col items-center justify-center px-4 lg:w-1/2">
+        <div className="w-full max-w-sm">
+          {/* Marca no topo (mobile) — logo da empresa OU nydSoftwares */}
+          <div className="mb-8 flex flex-col items-center gap-3">
+            {companyLogo ? (
+              /* ✅ Logo da empresa — tamanho bom no topo do formulário */
+              <img
+                src={companyLogo}
+                alt={companyName ?? 'Logo'}
+                className="h-16 w-16 rounded-lg object-contain"
+                referrerPolicy="no-referrer"
               />
-              <p className="text-xs text-muted-foreground">
-                Digite o código de 6 dígitos do seu app autenticador (ou um código de recuperação).
-              </p>
-            </div>
-
-            {mfaError && <p role="alert" className="text-sm text-destructive">{mfaError}</p>}
-
-            <Button type="submit" disabled={mfaLoading} className="w-full h-11">
-              {mfaLoading ? 'Verificando…' : 'Entrar'}
-            </Button>
-
-            <Button type="button" variant="ghost" className="w-full" onClick={backToLogin} disabled={mfaLoading}>
-              <ArrowLeft className="mr-2 h-4 w-4" />Voltar
-            </Button>
-          </form>
-        ) : (
-          /* Formulário de login (email + senha) */
-          <form onSubmit={handleLogin} className="space-y-4" noValidate>
-            <div className="space-y-2">
-              <Label htmlFor="email">E-mail</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                autoFocus
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={loading || isLocked}
-                className="h-11 rounded-lg"
+            ) : (
+              /* ✅ Padrão: logo da nyd MAIOR no topo */
+              <img
+                src="/logo-nydsoftwares-preto.png"
+                alt="nydSoftwares"
+                className="h-20 w-20 rounded-lg object-contain"
               />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Senha</Label>
-              </div>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading || isLocked}
-                className="h-11 rounded-lg"
-              />
-            </div>
-
-            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-            {isLocked && (
-              <p className="text-sm text-destructive">
-                Aguarde {lockSeconds}s antes de tentar novamente.
-              </p>
             )}
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              {companyName ?? 'Portal B2B'}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Acesse sua conta para continuar
+            </p>
+          </div>
 
-            <Button type="submit" disabled={loading || isLocked} className="w-full h-11">
-              {loading ? 'Entrando…' : 'Entrar'}
-            </Button>
-          </form>
-        )}
+          {mfaChallenge ? (
+            /* ✅ Passo MFA — segundo fator */
+            <form onSubmit={handleMfaVerify} className="space-y-4" noValidate>
+              <div className="space-y-2">
+                <Label htmlFor="mfa-code">Código de verificação</Label>
+                <Input
+                  id="mfa-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  placeholder="000000"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  disabled={mfaLoading}
+                  className="h-11 rounded-lg text-center text-lg tracking-[0.3em]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Digite o código de 6 dígitos do seu app autenticador (ou um código de recuperação).
+                </p>
+              </div>
+
+              {mfaError && <p role="alert" className="text-sm text-destructive">{mfaError}</p>}
+
+              <Button
+                type="submit"
+                disabled={mfaLoading}
+                className="h-11 w-full"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {mfaLoading ? 'Verificando…' : 'Entrar'}
+              </Button>
+
+              <Button type="button" variant="ghost" className="w-full" onClick={backToLogin} disabled={mfaLoading}>
+                <ArrowLeft className="mr-2 h-4 w-4" />Voltar
+              </Button>
+            </form>
+          ) : (
+            /* Formulário de login (email + senha) */
+            <form onSubmit={handleLogin} className="space-y-4" noValidate>
+              <div className="space-y-2">
+                <Label htmlFor="email">E-mail</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="username"
+                  autoFocus
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading || isLocked}
+                  className="h-11 rounded-lg"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Senha</Label>
+                </div>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading || isLocked}
+                  className="h-11 rounded-lg"
+                />
+              </div>
+
+              {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+              {isLocked && (
+                <p className="text-sm text-destructive">
+                  Aguarde {lockSeconds}s antes de tentar novamente.
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                disabled={loading || isLocked}
+                className="h-11 w-full"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {loading ? 'Entrando…' : 'Entrar'}
+              </Button>
+            </form>
+          )}
+
+          {/* Atribuição sutil — sempre visível (desktop e mobile) */}
+          <div className="mt-10 flex items-center justify-center gap-2 text-xs text-muted-foreground/70">
+            <img
+              src="/svg-logo-nydsoftwares.svg"
+              alt="nydSoftwares"
+              className="h-3.5 w-3.5 object-contain"
+            />
+            <span>
+              Desenvolvido por{' '}
+              <a
+                href={NYD_SITE}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-foreground/80 underline-offset-2 hover:underline"
+              >
+                nydSoftwares
+              </a>
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );
