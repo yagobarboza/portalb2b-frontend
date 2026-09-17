@@ -8,7 +8,6 @@
  * - Valores monetários trafegam como number (o backend envia Decimal/string
  *   numérica) e devem ser formatados com Intl.NumberFormat('pt-BR', ...).
  */
-
 // ─────────────────────────── Enums (espelho de app/models/enums.py) ─────────
 export type UserStatus = 'active' | 'inactive' | 'blocked';
 export type CustomerStatus = 'active' | 'inactive' | 'blocked';
@@ -42,23 +41,19 @@ export type FileOwnerType = 'product' | 'catalog' | 'ticket' | 'chat' | 'documen
 export type NotificationType = 'order' | 'ticket' | 'chat' | 'financial' | 'system';
 // ✅ Tipo de desconto por quantidade (espelho de DiscountType no backend)
 export type DiscountType = 'percent' | 'fixed';
-
 // ─────────────────────────── Auth (schemas/auth.py) ─────────────────────────
 export interface LoginRequest {
   email: string;
   password: string;
 }
-
 export interface RefreshRequest {
   refresh_token?: string | null;
 }
-
 export interface TokenResponse {
   access_token: string;
   token_type: string; // "bearer"
   expires_in: number;
 }
-
 export interface UserInfo {
   id: string;
   email: string;
@@ -70,7 +65,6 @@ export interface UserInfo {
   roles: string[];       // slugs das roles do usuário
   permissions: string[]; // códigos de permissão efetivos (RBAC)
 }
-
 // ✅ Resposta do login quando o usuário tem MFA ativo — o frontend deve
 // exibir o campo de código e chamar verifyMfaLogin com o challenge_token.
 export interface MfaChallengeResponse {
@@ -78,39 +72,32 @@ export interface MfaChallengeResponse {
   challenge_token: string;
   email: string;
 }
-
 // ✅ Validação do segundo fator no login (código TOTP ou recovery code).
 export interface MfaLoginVerifyRequest {
   challenge_token: string;
   code: string;
 }
-
 // ✅ Desativação do MFA: exige senha atual OU código TOTP (pelo menos um).
 export interface MfaDisableRequest {
   password?: string | null;
   code?: string | null;
 }
-
 export interface MfaSetupResponse {
   secret: string;
   qr_code: string;
   recovery_codes: string[];
 }
-
 export interface MfaVerifyRequest {
   secret: string;
   code: string;
 }
-
 export interface PasswordResetRequest {
   email: string;
 }
-
 export interface PasswordResetConfirmRequest {
   token: string;
   new_password: string;
 }
-
 // ─────────────────────── Company/Branding (schemas/company.py) ──────────────
 export interface CompanyBranding {
   id: string;
@@ -122,7 +109,6 @@ export interface CompanyBranding {
   primary_color: string | null;
   secondary_color: string | null;
 }
-
 export interface Company {
   id: string;
   name: string;
@@ -138,7 +124,6 @@ export interface Company {
   favicon_url: string | null;
   created_at: string;
 }
-
 export interface CompanyPage {
   items: Company[];
   total: number;
@@ -146,11 +131,9 @@ export interface CompanyPage {
   page_size: number;
   pages: number;
 }
-
 export interface CompanyStatusUpdate {
   status: 'active' | 'inactive';
 }
-
 export interface CompanyCreateRequest {
   name: string;
   cnpj: string;
@@ -161,7 +144,6 @@ export interface CompanyCreateRequest {
   admin_email: string;
   admin_full_name: string;
 }
-
 // ✅ NOVO — espelho de schemas/company.py CompanyUpdate (PATCH /companies/{id}).
 // Exclusivo Super Admin. Todos os campos são opcionais: o backend aplica
 // `exclude_unset=True, exclude_none=True`, então envie apenas o que mudou —
@@ -177,7 +159,6 @@ export interface CompanyUpdate {
   primary_color?: string | null; // ^#[0-9a-fA-F]{6}$
   secondary_color?: string | null;
 }
-
 // ─────────────────────────── Catalog (schemas/catalog.py) ───────────────────
 export interface Category {
   id: string;
@@ -187,20 +168,17 @@ export interface Category {
   is_active: boolean;
   created_at: string;
 }
-
 export interface CategoryCreate {
   name: string;
   slug: string;
   parent_id?: string | null;
 }
-
 export interface CategoryUpdate {
   name?: string | null;
   slug?: string | null;
   parent_id?: string | null;
   is_active?: boolean | null;
 }
-
 // ✅ Faixa de desconto por quantidade (exibida na vitrine)
 export interface QuantityTier {
   min_quantity: number;
@@ -208,7 +186,6 @@ export interface QuantityTier {
   discount_value: number;
   label: string | null;
 }
-
 export interface Product {
   id: string;
   sku: string;
@@ -233,7 +210,6 @@ export interface Product {
   // ✅ Faixas de desconto por quantidade (Desconto Progressivo)
   quantity_discounts?: QuantityTier[];
 }
-
 export interface ProductCreate {
   sku: string;
   code?: string | null;
@@ -247,7 +223,6 @@ export interface ProductCreate {
   // ✅ URL EXTERNA da imagem (CDN do cliente). '' ou ausente = usa o R2.
   image_url?: string | null;
 }
-
 export interface ProductUpdate {
   sku?: string | null;
   code?: string | null;
@@ -261,7 +236,6 @@ export interface ProductUpdate {
   // ✅ URL EXTERNA. Enviar '' LIMPA a imagem externa (→ NULL).
   image_url?: string | null;
 }
-
 export interface ProductListParams {
   search?: string | null;
   category_id?: string | null;
@@ -273,7 +247,6 @@ export interface ProductListParams {
   page?: number;
   page_size?: number;
 }
-
 export interface ProductPage {
   items: Product[];
   total: number;
@@ -281,32 +254,27 @@ export interface ProductPage {
   page_size: number;
   pages: number;
 }
-
 export interface PriceListCreate {
   name: string;
   description?: string | null;
 }
-
 export interface PriceList {
   id: string;
   name: string;
   description: string | null;
   is_active: boolean;
 }
-
 export interface CustomerPriceCreate {
   customer_id: string;
   product_id: string;
   price: number;
 }
-
 export interface CustomerPrice {
   id: string;
   customer_id: string;
   product_id: string;
   price: number;
 }
-
 // ✅ Listagem enriquecida de preços especiais (Bloco A)
 export interface CustomerPriceDetail {
   id: string;
@@ -317,11 +285,9 @@ export interface CustomerPriceDetail {
   product_sku: string | null;
   price: number;
 }
-
 export interface CustomerPriceUpdate {
   price: number;
 }
-
 export interface CustomerPricePage {
   items: CustomerPriceDetail[];
   total: number;
@@ -329,14 +295,12 @@ export interface CustomerPricePage {
   page_size: number;
   pages: number;
 }
-
 export interface CustomerPriceImportResult {
   created: number;
   updated: number;
   skipped: number;
   errors: Array<{ row: Record<string, unknown>; error: string }>;
 }
-
 export interface PriceQuote {
   product_id: string;
   sku: string;
@@ -349,7 +313,6 @@ export interface PriceQuote {
   quantity?: number | null;
   quantity_discounts?: QuantityTier[];
 }
-
 // ──────────────────── Descontos por Quantidade (schemas/discount.py) ────────
 export interface QuantityDiscountCreate {
   product_id: string;
@@ -358,7 +321,6 @@ export interface QuantityDiscountCreate {
   discount_type: DiscountType;
   discount_value: number;
 }
-
 export interface QuantityDiscountUpdate {
   product_id?: string | null;
   customer_id?: string | null;
@@ -367,7 +329,6 @@ export interface QuantityDiscountUpdate {
   discount_value?: number | null;
   is_active?: boolean | null;
 }
-
 export interface QuantityDiscount {
   id: string;
   product_id: string;
@@ -381,7 +342,6 @@ export interface QuantityDiscount {
   is_active: boolean;
   created_at: string;
 }
-
 export interface QuantityDiscountPage {
   items: QuantityDiscount[];
   total: number;
@@ -389,24 +349,20 @@ export interface QuantityDiscountPage {
   page_size: number;
   pages: number;
 }
-
 export interface QuantityDiscountImportResult {
   created: number;
   updated: number;
   skipped: number;
   errors: Array<{ row: number | Record<string, unknown>; error: string }>;
 }
-
 // ─────────────────────────── Cart (schemas/cart.py) ─────────────────────────
 export interface CartItemAdd {
   product_id: string;
   quantity: number;
 }
-
 export interface CartItemUpdate {
   quantity: number;
 }
-
 export interface CartItem {
   id: string;
   product_id: string;
@@ -414,7 +370,6 @@ export interface CartItem {
   unit_price: number;
   subtotal: number;
 }
-
 export interface Cart {
   id: string;
   customer_id: string;
@@ -422,13 +377,11 @@ export interface Cart {
   items: CartItem[];
   total: number;
 }
-
 // ─────────────────────────── Orders (schemas/order.py) ──────────────────────
 export interface OrderStatusUpdate {
   status: string;
   note?: string | null; // max 500
 }
-
 export interface OrderItem {
   id: string;
   product_id: string;
@@ -436,7 +389,6 @@ export interface OrderItem {
   unit_price: number;
   subtotal: number;
 }
-
 export interface OrderStatusHistory {
   id: string;
   from_status: string | null;
@@ -444,7 +396,6 @@ export interface OrderStatusHistory {
   note: string | null;
   created_at: string;
 }
-
 export interface Order {
   id: string;
   number: string;
@@ -456,11 +407,9 @@ export interface Order {
   items: OrderItem[];
   status_history: OrderStatusHistory[];
 }
-
 export interface OrderCreate {
   notes?: string | null;
 }
-
 export interface OrderPage {
   items: Order[];
   total: number;
@@ -468,7 +417,6 @@ export interface OrderPage {
   page_size: number;
   pages: number;
 }
-
 // ─────────────────────────── Customers (schemas/customer.py) ────────────────
 export interface Customer {
   id: string;
@@ -479,21 +427,18 @@ export interface Customer {
   status: CustomerStatus;
   created_at: string;
 }
-
 export interface CustomerCreate {
   name: string;
   email?: string | null;
   phone?: string | null;
   document?: string | null;
 }
-
 export interface CustomerUpdate {
   name?: string | null;
   email?: string | null;
   phone?: string | null;
   document?: string | null;
 }
-
 export interface CustomerPage {
   items: Customer[];
   total: number;
@@ -501,20 +446,17 @@ export interface CustomerPage {
   page_size: number;
   pages: number;
 }
-
 export interface CustomerImportResult {
   created: number;
   skipped: number;
   errors: Array<{ row: Record<string, unknown>; error: string }>;
 }
-
 export interface CustomerImportRow {
   name: string;
   email?: string | null;
   phone?: string | null;
   document?: string | null;
 }
-
 // ─────────────────────────── Users/Team (schemas/user.py) ───────────────────
 export interface UserRead {
   id: string;
@@ -526,14 +468,12 @@ export interface UserRead {
   // ✅ setor de atendimento do chat (NULL = vê todos os setores)
   chat_sector: ChatSector | null;
 }
-
 export interface UserCreate {
   email: string;
   full_name: string;
   phone?: string | null;
   role_slug: string;
 }
-
 export interface UserUpdate {
   full_name?: string | null;
   phone?: string | null;
@@ -542,7 +482,6 @@ export interface UserUpdate {
   // ✅ setor de atendimento do chat (NULL = vê todos os setores)
   chat_sector?: ChatSector | null;
 }
-
 export interface UserPage {
   items: UserRead[];
   total: number;
@@ -550,7 +489,6 @@ export interface UserPage {
   page_size: number;
   pages: number;
 }
-
 // ─────────────────────────── Roles (schemas/role.py) ────────────────────────
 export interface Role {
   id: string;
@@ -560,31 +498,26 @@ export interface Role {
   is_system: boolean;
   permissions: string[]; // códigos de permissão
 }
-
 export interface RoleCreate {
   name: string;
   slug: string; // ^[a-z0-9-_]+$
   description?: string | null;
   permission_codes?: string[];
 }
-
 export interface RoleUpdate {
   name?: string | null;
   description?: string | null;
   permission_codes?: string[] | null;
 }
-
 export interface RoleList {
   items: Role[];
 }
-
 // ─────────────────────────── Invitations (schemas/invitation.py) ────────────
 export interface InviteCreate {
   email: string;
   full_name?: string | null;
   role_slug: string;
 }
-
 export interface InviteResponse {
   id: string;
   email: string;
@@ -594,13 +527,11 @@ export interface InviteResponse {
   expires_at: string;
   created_at: string;
 }
-
 export interface InviteAccept {
   token: string;
   full_name: string;
   password: string; // min 8
 }
-
 export interface Invitation {
   id: string;
   email: string;
@@ -610,7 +541,6 @@ export interface Invitation {
   expires_at: string;
   created_at: string;
 }
-
 // ─────────────────────────── Tickets (schemas/ticket.py) ────────────────────
 export interface TicketCreate {
   title: string;
@@ -618,21 +548,17 @@ export interface TicketCreate {
   category?: string | null;
   priority?: TicketPriority; // default 'medium'
 }
-
 export interface TicketMessageCreate {
   content: string;
   is_internal?: boolean; // default false — notas internas só p/ operadores
 }
-
 export interface TicketStatusUpdate {
   status: TicketStatus;
   note?: string | null;
 }
-
 export interface TicketAssignRequest {
   assignee_id: string;
 }
-
 export interface TicketMessage {
   id: string;
   ticket_id: string;
@@ -643,7 +569,6 @@ export interface TicketMessage {
   attachment_file_id: string | null;
   created_at: string;
 }
-
 export interface TicketStatusHistory {
   id: string;
   from_status: TicketStatus | null;
@@ -651,7 +576,6 @@ export interface TicketStatusHistory {
   note: string | null;
   created_at: string;
 }
-
 export interface Ticket {
   id: string;
   number: string;
@@ -665,24 +589,20 @@ export interface Ticket {
   created_at: string;
   updated_at: string;
 }
-
 export interface TicketDetail extends Ticket {
   messages: TicketMessage[];
   history: TicketStatusHistory[];
 }
-
 export interface TicketPage {
   items: Ticket[];
   total: number;
   page: number;
   page_size: number;
 }
-
 // ─────────────────────────── Chat (schemas/chat.py) ─────────────────────────
 export interface ChatMessageCreate {
   content: string; // 1..4000
 }
-
 export interface ChatMessage {
   id: string;
   room_id: string;
@@ -694,14 +614,12 @@ export interface ChatMessage {
   attachment_file_id: string | null;
   created_at: string;
 }
-
 export interface ChatMessagePage {
   items: ChatMessage[];
   total: number;
   page: number;
   page_size: number;
 }
-
 export interface ChatRoom {
   id: string;
   customer_id: string;
@@ -709,11 +627,9 @@ export interface ChatRoom {
   status: ChatRoomStatus;
   created_at: string;
 }
-
 export interface ChatTransferRequest {
   sector: ChatSector;
 }
-
 // ─────────────────────────── Financial (schemas/financial.py) ───────────────
 export interface FinancialPayment {
   id: string;
@@ -721,7 +637,6 @@ export interface FinancialPayment {
   paid_at: string;
   method: string | null;
 }
-
 export interface FinancialAccount {
   id: string;
   customer_id: string;
@@ -733,19 +648,16 @@ export interface FinancialAccount {
   order_id: string | null;
   external_id: string | null;
 }
-
 export interface FinancialAccountDetail extends FinancialAccount {
   days_overdue: number;
   payments: FinancialPayment[];
 }
-
 export interface FinancialAccountPage {
   items: FinancialAccount[];
   total: number;
   page: number;
   page_size: number;
 }
-
 // ─────────────────────────── Notifications (schemas/notification.py) ────────
 export interface Notification {
   id: string;
@@ -758,18 +670,15 @@ export interface Notification {
   read_at: string | null;
   created_at: string;
 }
-
 export interface NotificationPage {
   items: Notification[];
   total: number;
   page: number;
   page_size: number;
 }
-
 export interface UnreadCount {
   unread: number;
 }
-
 // ─────────────────────────── Paginação genérica ─────────────────────────────
 export interface PageMeta {
   total: number;
@@ -777,7 +686,6 @@ export interface PageMeta {
   page_size: number;
   pages: number;
 }
-
 // ─────────────────────────── Files (schemas/file.py — Bloco 3) ─────────────
 export interface FileRead {
   id: string;
@@ -789,13 +697,50 @@ export interface FileRead {
   is_private: boolean;
   created_at: string;
 }
-
 export interface FileUploadResponse {
   file: FileRead;
   url: string;
 }
-
 export interface FileDownloadResponse {
   url: string;
   expires_in: number;
+}
+// ─────────────────────────── Billing (schemas/billing.py) ───────────────────
+export type BillingType = 'pix' | 'boleto' | 'credit_card';
+export type BillingStatus = 'pending' | 'paid' | 'overdue' | 'cancelled' | 'refunded';
+export type BillingChargeType = 'mensalidade' | 'implantacao' | 'custom' | 'modulo';
+export interface BillingCharge {
+  id: string;
+  tenant_id: string;
+  type: BillingChargeType;
+  value: number;
+  due_date: string;
+  billing_type: BillingType;
+  status: BillingStatus;
+  checkout_url: string | null;
+  asaas_subscription_id: string | null;
+  paid_at: string | null;
+  created_at: string;
+}
+export interface BillingChargePage {
+  items: BillingCharge[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+// ✅ Inputs de criação (Super Admin — Fase 5)
+/** Corpo de POST /billing/charges (avulsa — implantação, custom ou módulo). */
+export interface BillingChargeCreateInput {
+  type: 'implantacao' | 'custom' | 'modulo';
+  value: number;
+  due_date: string; // YYYY-MM-DD
+  billing_type: BillingType;
+  description?: string | null; // ex.: "Módulo novo — CRM"
+}
+/** Corpo de POST /billing/subscriptions (mensalidade recorrente). */
+export interface BillingSubscriptionCreateInput {
+  value?: number | null; // se informado, define a mensalidade (e o monthly_fee)
+  billing_type: BillingType;
+  next_due_date?: string | null; // YYYY-MM-DD — ausente = hoje + 30 dias
 }

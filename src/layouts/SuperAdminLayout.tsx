@@ -3,7 +3,7 @@ import { useBranding } from '../lib/useBranding';
 import { useDocumentTitle } from '../lib/useDocumentTitle'; // ✅ título da aba
 import NotificationsBell from '../components/notifications/NotificationsBell';
 import UserMenu from '../components/UserMenu'; // ✅ menu do usuário (avatar)
-import { Zap, Building2 } from 'lucide-react';
+import { Zap, Building2, Receipt } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ModeToggle } from '../components/mode-toggle';
 
@@ -58,6 +58,21 @@ export default function SuperAdminLayout() {
             >
               <Building2 className="w-4 h-4" />
               Empresas
+            </NavLink>
+            {/* ✅ Pagamentos & Assinaturas (billing Asaas) — situação financeira global */}
+            <NavLink
+              to="/superadmin/pagamentos"
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                )
+              }
+            >
+              <Receipt className="w-4 h-4" />
+              Pagamentos
             </NavLink>
           </nav>
 

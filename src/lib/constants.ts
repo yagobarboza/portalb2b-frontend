@@ -35,11 +35,13 @@ export const PERMISSIONS = {
   FILE_READ: 'files:read',
   NOTIFICATION_READ: 'notifications:read',
   ADMIN_MANAGE: 'admin:manage',
+  // ✅ Billing (cobranças/assinaturas Asaas)
+  BILLING_READ: 'billing:read',      // admin da empresa vê as cobranças dela
+  BILLING_MANAGE: 'billing:manage',  // superadmin cria/gerencia cobranças
   SUPER_ADMIN: 'super_admin:all',
 } as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-
 export const PERMISSION_GROUPS: Record<string, PermissionCode[]> = {
   products: [
     PERMISSIONS.PRODUCT_READ, PERMISSIONS.PRODUCT_CREATE,
@@ -52,25 +54,26 @@ export const PERMISSION_GROUPS: Record<string, PermissionCode[]> = {
   ],
   tickets: [PERMISSIONS.TICKET_READ, PERMISSIONS.TICKET_CREATE, PERMISSIONS.TICKET_UPDATE],
   financial: [PERMISSIONS.FINANCIAL_READ],
+  billing: [PERMISSIONS.BILLING_READ, PERMISSIONS.BILLING_MANAGE],
   admin: [PERMISSIONS.ADMIN_MANAGE],
 };
 
 /** Rota padrão pós-login conforme o perfil do usuário (UserInfo). */
 export function defaultPathForUser(user: {
-  customer_id: string | null;
-  tenant_id: string | null;
-  is_super_admin: boolean;
+  is_super_admin?: boolean;
+  customer_id?: string | null;
+  tenant_id?: string | null;
 }): string {
   if (user.is_super_admin) return '/superadmin';
-  if (user.customer_id !== null) return '/loja';
-  if (user.tenant_id !== null) return '/empresa';
+  if (user.customer_id !== null && user.customer_id !== undefined) return '/loja';
+  if (user.tenant_id !== null && user.tenant_id !== undefined) return '/empresa';
   return '/login';
 }
 
 export const CLIENT_ROUTES = ['/loja', '/carrinho', '/pedidos', '/tickets', '/chat', '/financeiro'] as const;
 export const COMPANY_ROUTES = [
   '/empresa', '/empresa/catalogo', '/empresa/clientes', '/empresa/pedidos',
-  '/empresa/equipe', '/empresa/tickets', '/empresa/chat',
+  '/empresa/equipe', '/empresa/tickets', '/empresa/chat', '/empresa/pagamentos',
 ] as const;
-export const SUPER_ADMIN_ROUTES = ['/superadmin'] as const;
+export const SUPER_ADMIN_ROUTES = ['/superadmin', '/superadmin/pagamentos'] as const;
 export const PUBLIC_ROUTES = ['/login'] as const;
