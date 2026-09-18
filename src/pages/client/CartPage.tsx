@@ -21,7 +21,10 @@ const qtyInt = (v: number | string | null | undefined): number => {
 const stockOf = qtyInt;
 
 export default function CartPage() {
-  const { items, productMap, updateQty, removeItem, clearCart, total, isLoading } = useCart();
+  const {
+    items, productMap, updateQty, removeItem, clearCart, total, isLoading,
+    minOrderValue, minOrderQuantity,
+  } = useCart();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [ordering, setOrdering] = useState(false);
@@ -40,6 +43,12 @@ export default function CartPage() {
     const stock = stockOf(product.stock);
     return stock > 0 && qty > stock;
   });
+
+  // ✅ Regras de compra da empresa (valor e/ou quantidade mínima).
+  const totalQty = rows.reduce((s, r) => s + r.qty, 0);
+  const belowMinValue = minOrderValue != null && total < minOrderValue;
+  const belowMinQty = minOrderQuantity != null && totalQty < minOrderQuantity;
+  const blockedByRules = belowMinValue || belowMinQty;
 
   const handleUpdateQty = async (itemId: string, qty: number) => {
     if (qty < 1) return;
@@ -68,7 +77,7 @@ export default function CartPage() {
   // Checkout (Bloco 7): POST /orders — o backend cria o pedido a partir do
   // carrinho persistido e revalida preços/estoque. Nunca enviamos valores.
   const handleFinalize = async () => {
-    if (items.length === 0 || ordering || hasOverStock) return;
+    if (items.length === 0 || ordering || hasOverStock || blockedByRules) return;
     setOrdering(true);
     try {
       await api.post<Order>('/orders', {});
@@ -105,12 +114,13 @@ export default function CartPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="mx-auto w-full max-w-5xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold">Carrinho</h1>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      {/* ✅ min-w-0 + overflow-hidden em cada coluna evita o scroll horizontal */}
+      <div className="grid w-full min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* Itens */}
-        <div className="space-y-3">
+        <div className="min-w-0 space-y-3">
           {rows.map(({ item, qty, product }) => {
             const stock = stockOf(product.stock);
             // ✅ Botão + trava quando a quantidade atinge o estoque disponível.
@@ -121,8 +131,8 @@ export default function CartPage() {
             const unitPrice = Number(item.unit_price);
             const hasQtyDiscount = referencePrice - unitPrice > 0.001;
             return (
-              <Card key={item.id}>
-                <CardContent className="flex items-center gap-4 p-4">
+              <Card key={item.id} className="min-w-0 overflow-hidden">
+                <CardContent className="flex min-w-0 items-center gap-3 p-4">
                   <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/50">
                     {isSafeImageUrl(product.image_url) ? (
                       <img
@@ -137,7 +147,7 @@ export default function CartPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{product.name}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="truncate text-xs text-muted-foreground">
                       {product.sku}
                       {product.unit ? ` · ${product.unit}` : ''}
                     </p>
@@ -165,10 +175,11 @@ export default function CartPage() {
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-1">
                     <Button
                       variant="outline"
                       size="icon"
+                      className="h-8 w-8"
                       disabled={busy || qty <= 1}
                       onClick={() => handleUpdateQty(item.id, qty - 1)}
                       aria-label="Diminuir"
@@ -176,10 +187,11 @@ export default function CartPage() {
                       <Minus className="h-4 w-4" />
                     </Button>
                     {/* ✅ Exibe quantidade SEMPRE inteira (nunca "2.000") */}
-                    <span className="w-10 text-center text-sm font-medium">{qty}</span>
+                    <span className="w-8 text-center text-sm font-medium">{qty}</span>
                     <Button
                       variant="outline"
                       size="icon"
+                      className="h-8 w-8"
                       // ✅ TRAVA aqui: não permite ultrapassar o estoque no frontend.
                       disabled={busy || atStock}
                       onClick={() => handleUpdateQty(item.id, qty + 1)}
@@ -188,7 +200,7 @@ export default function CartPage() {
                       <Plus className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="w-28 text-right">
+                  <div className="w-24 shrink-0 text-right">
                     <p className="font-semibold">{formatCurrency(item.subtotal)}</p>
                     <Button
                       variant="ghost"
@@ -208,7 +220,7 @@ export default function CartPage() {
         </div>
 
         {/* Resumo — total SEMPRE vindo do backend (preços negociados validados). */}
-        <Card className="h-fit">
+        <Card className="h-fit min-w-0">
           <CardHeader>
             <CardTitle className="text-base">Resumo</CardTitle>
           </CardHeader>
@@ -216,7 +228,7 @@ export default function CartPage() {
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Itens</span>
               {/* ✅ Soma SEMPRE numérica (quantidade normalizada) */}
-              <span>{rows.reduce((s, r) => s + r.qty, 0)}</span>
+              <span>{totalQty}</span>
             </div>
             <div className="flex items-center justify-between border-t pt-3">
               <span className="font-medium">Total</span>
@@ -230,7 +242,22 @@ export default function CartPage() {
                 Ajuste as quantidades: há itens acima do estoque disponível.
               </p>
             )}
-            <Button className="w-full" onClick={handleFinalize} disabled={ordering || hasOverStock}>
+            {/* ✅ Aviso das regras de compra da empresa */}
+            {blockedByRules && (
+              <div role="alert" className="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+                {belowMinValue && (
+                  <p>Valor mínimo de compra: {formatCurrency(minOrderValue)}.</p>
+                )}
+                {belowMinQty && (
+                  <p>Quantidade mínima: {minOrderQuantity} unidade(s).</p>
+                )}
+              </div>
+            )}
+            <Button
+              className="w-full"
+              onClick={handleFinalize}
+              disabled={ordering || hasOverStock || blockedByRules}
+            >
               {ordering ? 'Enviando…' : 'Finalizar pedido'}
             </Button>
             <Button variant="ghost" className="w-full" onClick={() => navigate('/loja')}>

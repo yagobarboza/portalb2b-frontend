@@ -17,6 +17,9 @@ interface CartContextValue {
   total: number;
   /** Nº de PRODUTOS distintos no carrinho (não a soma de unidades). */
   count: number;
+  /** Regras de compra da empresa (do GET /cart). */
+  minOrderValue: number | null;
+  minOrderQuantity: number | null;
   isLoading: boolean;
   registerProduct: (product: Product) => void;
   addItem: (productId: string, quantity: number) => Promise<void>;
@@ -34,6 +37,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [productMap, setProductMap] = useState<Record<string, Product>>({});
+  // ✅ NOVO: regras de compra da empresa (mínimo em valor e/ou quantidade).
+  const [minOrderValue, setMinOrderValue] = useState<number | null>(null);
+  const [minOrderQuantity, setMinOrderQuantity] = useState<number | null>(null);
 
   const registerProduct = useCallback((product: Product) => {
     setProductMap((prev) => (prev[product.id] ? prev : { ...prev, [product.id]: product }));
@@ -44,6 +50,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (!user || resolveProfile(user) !== 'cliente') {
       setItems([]);
       setTotal(0);
+      setMinOrderValue(null);
+      setMinOrderQuantity(null);
       return;
     }
     setIsLoading(true);
@@ -51,6 +59,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const cart = await api.get<Cart>('/cart');
       setItems(cart.items);
       setTotal(cart.total);
+      // ✅ NOVO: lê as regras de compra da empresa (opcionais).
+      setMinOrderValue(cart.min_order_value != null ? Number(cart.min_order_value) : null);
+      setMinOrderQuantity(cart.min_order_quantity != null ? Number(cart.min_order_quantity) : null);
       // Enriquece com produtos (o CartItem da API não traz nome/imagem).
       if (cart.items.length > 0) {
         try {
@@ -68,6 +79,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setItems([]);
       setTotal(0);
+      setMinOrderValue(null);
+      setMinOrderQuantity(null);
     } finally {
       setIsLoading(false);
     }
@@ -78,6 +91,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     if (!user) {
       setItems([]);
       setTotal(0);
+      setMinOrderValue(null);
+      setMinOrderQuantity(null);
       return;
     }
     loadCart();
@@ -106,6 +121,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const clearCart = useCallback(() => {
     setItems([]);
     setTotal(0);
+    setMinOrderValue(null);
+    setMinOrderQuantity(null);
   }, []);
 
   // ✅ BUG 8 corrigido: badge = quantidade de PRODUTOS, não de unidades.
@@ -117,6 +134,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     productMap,
     total,
     count,
+    minOrderValue,
+    minOrderQuantity,
     isLoading,
     registerProduct,
     addItem,

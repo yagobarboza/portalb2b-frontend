@@ -41,6 +41,7 @@ export type FileOwnerType = 'product' | 'catalog' | 'ticket' | 'chat' | 'documen
 export type NotificationType = 'order' | 'ticket' | 'chat' | 'financial' | 'system';
 // ✅ Tipo de desconto por quantidade (espelho de DiscountType no backend)
 export type DiscountType = 'percent' | 'fixed';
+
 // ─────────────────────────── Auth (schemas/auth.py) ─────────────────────────
 export interface LoginRequest {
   email: string;
@@ -98,6 +99,7 @@ export interface PasswordResetConfirmRequest {
   token: string;
   new_password: string;
 }
+
 // ─────────────────────── Company/Branding (schemas/company.py) ──────────────
 export interface CompanyBranding {
   id: string;
@@ -159,6 +161,18 @@ export interface CompanyUpdate {
   primary_color?: string | null; // ^#[0-9a-fA-F]{6}$
   secondary_color?: string | null;
 }
+
+// ✅ NOVO — Regras de Compra da empresa (GET/PATCH /companies/purchase-rules).
+// A própria empresa (staff) define o mínimo de compra em valor e/ou quantidade.
+export interface CompanyPurchaseRules {
+  min_order_value: number | null;
+  min_order_quantity: number | null;
+}
+export interface CompanyPurchaseRulesUpdate {
+  min_order_value?: number | null; // null remove a regra
+  min_order_quantity?: number | null; // null remove a regra
+}
+
 // ─────────────────────────── Catalog (schemas/catalog.py) ───────────────────
 export interface Category {
   id: string;
@@ -313,6 +327,7 @@ export interface PriceQuote {
   quantity?: number | null;
   quantity_discounts?: QuantityTier[];
 }
+
 // ──────────────────── Descontos por Quantidade (schemas/discount.py) ────────
 export interface QuantityDiscountCreate {
   product_id: string;
@@ -355,6 +370,7 @@ export interface QuantityDiscountImportResult {
   skipped: number;
   errors: Array<{ row: number | Record<string, unknown>; error: string }>;
 }
+
 // ─────────────────────────── Cart (schemas/cart.py) ─────────────────────────
 export interface CartItemAdd {
   product_id: string;
@@ -376,7 +392,11 @@ export interface Cart {
   status: CartStatus;
   items: CartItem[];
   total: number;
+  // ✅ Regras de compra da empresa (do GET /cart) — opcionais.
+  min_order_value?: number | null;
+  min_order_quantity?: number | null;
 }
+
 // ─────────────────────────── Orders (schemas/order.py) ──────────────────────
 export interface OrderStatusUpdate {
   status: string;
@@ -417,6 +437,7 @@ export interface OrderPage {
   page_size: number;
   pages: number;
 }
+
 // ─────────────────────────── Customers (schemas/customer.py) ────────────────
 export interface Customer {
   id: string;
@@ -457,6 +478,7 @@ export interface CustomerImportRow {
   phone?: string | null;
   document?: string | null;
 }
+
 // ─────────────────────────── Users/Team (schemas/user.py) ───────────────────
 export interface UserRead {
   id: string;
@@ -489,6 +511,7 @@ export interface UserPage {
   page_size: number;
   pages: number;
 }
+
 // ─────────────────────────── Roles (schemas/role.py) ────────────────────────
 export interface Role {
   id: string;
@@ -512,6 +535,7 @@ export interface RoleUpdate {
 export interface RoleList {
   items: Role[];
 }
+
 // ─────────────────────────── Invitations (schemas/invitation.py) ────────────
 export interface InviteCreate {
   email: string;
@@ -541,6 +565,7 @@ export interface Invitation {
   expires_at: string;
   created_at: string;
 }
+
 // ─────────────────────────── Tickets (schemas/ticket.py) ────────────────────
 export interface TicketCreate {
   title: string;
@@ -599,6 +624,7 @@ export interface TicketPage {
   page: number;
   page_size: number;
 }
+
 // ─────────────────────────── Chat (schemas/chat.py) ─────────────────────────
 export interface ChatMessageCreate {
   content: string; // 1..4000
@@ -630,6 +656,7 @@ export interface ChatRoom {
 export interface ChatTransferRequest {
   sector: ChatSector;
 }
+
 // ─────────────────────────── Financial (schemas/financial.py) ───────────────
 export interface FinancialPayment {
   id: string;
@@ -658,6 +685,7 @@ export interface FinancialAccountPage {
   page: number;
   page_size: number;
 }
+
 // ─────────────────────────── Notifications (schemas/notification.py) ────────
 export interface Notification {
   id: string;
@@ -679,6 +707,7 @@ export interface NotificationPage {
 export interface UnreadCount {
   unread: number;
 }
+
 // ─────────────────────────── Paginação genérica ─────────────────────────────
 export interface PageMeta {
   total: number;
@@ -686,6 +715,7 @@ export interface PageMeta {
   page_size: number;
   pages: number;
 }
+
 // ─────────────────────────── Files (schemas/file.py — Bloco 3) ─────────────
 export interface FileRead {
   id: string;
@@ -705,6 +735,7 @@ export interface FileDownloadResponse {
   url: string;
   expires_in: number;
 }
+
 // ─────────────────────────── Billing (schemas/billing.py) ───────────────────
 export type BillingType = 'pix' | 'boleto' | 'credit_card';
 export type BillingStatus = 'pending' | 'paid' | 'overdue' | 'cancelled' | 'refunded';

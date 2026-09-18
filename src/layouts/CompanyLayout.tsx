@@ -12,7 +12,7 @@ import { ModeToggle } from '../components/mode-toggle';
 import {
   LayoutDashboard, Package, Users, ShoppingBag, UserCog, TicketIcon,
   MessageCircle, CreditCard, Zap, FolderTree, BadgePercent, Percent,
-  PlugZap, Receipt, Menu, X,
+  PlugZap, Receipt, Menu, X, PackageCheck,
 } from 'lucide-react';
 
 // ✅ Módulos do portal. Configurações do usuário (MFA) NÃO ficam aqui —
@@ -23,6 +23,10 @@ const menuItems = [
   { label: 'Categorias', href: '/empresa/categorias', icon: FolderTree, permission: PERMISSIONS.CATALOG_MANAGE },
   { label: 'Preços Especiais', href: '/empresa/precos', icon: BadgePercent, permission: PERMISSIONS.CATALOG_MANAGE },
   { label: 'Descontos', href: '/empresa/descontos', icon: Percent, permission: PERMISSIONS.CATALOG_MANAGE },
+  // ✅ Regras de Compra — exige apenas usuário da empresa (staff). O backend
+  // (perfil empresa + tenant) é a autoridade, por isso NÃO há `permission`
+  // granular aqui (mesmo padrão de Pagamentos e Integrações).
+  { label: 'Regras de Compra', href: '/empresa/regras', icon: PackageCheck },
   { label: 'Clientes', href: '/empresa/clientes', icon: Users },
   { label: 'Pedidos', href: '/empresa/pedidos', icon: ShoppingBag },
   { label: 'Equipe', href: '/empresa/equipe', icon: UserCog, permission: PERMISSIONS.USER_READ },
