@@ -98,6 +98,7 @@ export default function ProductPage() {
       setLoading(false);
     }
   }, [id, user?.customer_id, registerProduct, navigate]);
+
   useEffect(() => { load(); }, [load]);
 
   const stock = stockOf(product);
@@ -145,14 +146,14 @@ export default function ProductPage() {
         <p className="py-20 text-center text-muted-foreground">Produto não encontrado.</p>
       ) : (
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-          {/* Imagem */}
+          {/* Imagem — object-contain mostra a foto INTEIRA (não corta) */}
           <Card className="overflow-hidden">
-            <CardContent className="flex h-72 items-center justify-center bg-muted/40 p-0 md:h-96">
+            <CardContent className="flex h-72 items-center justify-center bg-muted/40 p-4 md:h-96">
               {isSafeImageUrl(product.image_url) ? (
                 <img
                   src={product.image_url}
                   alt={product.name}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                   referrerPolicy="no-referrer"
                 />
               ) : (

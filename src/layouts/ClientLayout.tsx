@@ -13,7 +13,7 @@ import {
 // ✅ Módulos do portal do cliente. Configurações do usuário (MFA) NÃO ficam
 // aqui — são acessadas pelo menu do usuário (avatar) → /perfil.
 const navLinks = [
-  { label: 'Vitrine', href: '/loja', icon: Store },
+  { label: 'Produtos', href: '/loja', icon: Store },
   { label: 'Meus Pedidos', href: '/pedidos', icon: Package },
   { label: 'Tickets', href: '/tickets', icon: TicketIcon },
   { label: 'Chat', href: '/chat', icon: MessageCircle },
@@ -30,44 +30,26 @@ export default function ClientLayout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Header */}
+      {/* ── Header superior: logo + ações ── */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4">
-          {/* Logo — branding real do tenant com fallback institucional (40px) */}
-          <div className="mr-4 flex flex-shrink-0 items-center gap-2">
+        <div className="mx-auto flex h-20 max-w-7xl items-center gap-4 px-4">
+          {/* Logo — PREENCHE TODA a altura do header (80px), bem evidente */}
+          <div className="mr-4 flex flex-shrink-0 items-center self-stretch">
             {logoUrl ? (
-              <img src={logoUrl} alt={branding?.name ?? 'nydB2B'} className="h-10 w-10 rounded-lg object-contain" referrerPolicy="no-referrer" />
+              <img
+                src={logoUrl}
+                alt={branding?.name ?? 'nydB2B'}
+                className="h-full w-auto max-w-40 object-contain"
+                referrerPolicy="no-referrer"
+              />
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-                <Zap className="h-6 w-6 text-primary-foreground" />
+              <div className="flex h-full w-20 items-center justify-center bg-primary">
+                <Zap className="h-10 w-10 text-primary-foreground" />
               </div>
             )}
-            <div className="hidden sm:block">
-              <span className="block text-base font-bold leading-none">{branding?.name ?? 'nydB2B'}</span>
-              <p className="mt-0.5 text-[10px] leading-none text-muted-foreground">Portal do Cliente</p>
-            </div>
           </div>
 
-          {/* Navegação principal */}
-          <nav className="flex flex-1 items-center gap-1 overflow-x-auto">
-            {navLinks.map((link) => (
-              <NavLink
-                key={link.href}
-                to={link.href}
-                className={({ isActive }) =>
-                  cn(
-                    'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                    isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  )
-                }
-              >
-                <link.icon className="h-4 w-4" />
-                <span className="hidden md:inline">{link.label}</span>
-              </NavLink>
-            ))}
-          </nav>
-
-          {/* Ações */}
+          {/* Ações à direita */}
           <div className="ml-auto flex items-center gap-2">
             <NavLink
               to="/carrinho"
@@ -94,6 +76,29 @@ export default function ClientLayout() {
           </div>
         </div>
       </header>
+
+      {/* ── Barra de NAVEGAÇÃO (quadrada, estilo e-commerce) ── */}
+      <nav className="w-full border-b bg-card">
+        <div className="mx-auto flex max-w-7xl items-stretch overflow-x-auto px-4">
+          {navLinks.map((link) => (
+            <NavLink
+              key={link.href}
+              to={link.href}
+              className={({ isActive }) =>
+                cn(
+                  'inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                  isActive
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:border-muted hover:text-foreground',
+                )
+              }
+            >
+              <link.icon className="h-4 w-4" />
+              <span>{link.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      </nav>
 
       <main className="flex-1">
         <Outlet />

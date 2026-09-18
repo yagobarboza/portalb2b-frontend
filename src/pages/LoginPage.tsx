@@ -216,7 +216,7 @@ export default function LoginPage() {
           <img
             src="/svg-logo-nydsoftwares.svg"
             alt="nydSoftwares"
-            className="h-4 w-4 object-contain brightness-0 invert"
+            className="h-14 w-14 object-contain brightness-0 invert"
           />
           <span>
             Desenvolvido por{' '}
