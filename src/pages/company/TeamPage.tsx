@@ -23,7 +23,6 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 
 const PAGE_SIZE = 20;
-
 const ROLE_LABELS: Record<string, string> = {
   products: 'Produtos e Catálogo',
   orders: 'Pedidos',
@@ -31,8 +30,7 @@ const ROLE_LABELS: Record<string, string> = {
   financial: 'Financeiro',
   admin: 'Administração',
 };
-
-// ✅ Rótulos e opções dos setores de atendimento (chat)
+// Rótulos e opções dos setores de atendimento (chat)
 const CHAT_SECTOR_LABELS: Record<ChatSector, string> = {
   sales: 'Vendas',
   commercial: 'Comercial',
@@ -50,7 +48,6 @@ function ChipDark({ children, className = '' }: { children: React.ReactNode; cla
     </span>
   );
 }
-
 function ChipMuted({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <span className={`inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground ${className}`}>
@@ -58,7 +55,6 @@ function ChipMuted({ children, className = '' }: { children: React.ReactNode; cl
     </span>
   );
 }
-
 function ChipDestructive({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <span className={`inline-flex shrink-0 items-center rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-white ${className}`}>
@@ -66,7 +62,6 @@ function ChipDestructive({ children, className = '' }: { children: React.ReactNo
     </span>
   );
 }
-
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
   return (
     <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -78,7 +73,6 @@ function PageHeading({ title, description, action }: { title: string; descriptio
     </div>
   );
 }
-
 const statusBadge = (status: string) => {
   if (status === 'active') return <ChipDark>Ativo</ChipDark>;
   if (status === 'inactive') return <ChipMuted>Inativo</ChipMuted>;
@@ -102,19 +96,25 @@ export default function TeamPage() {
   const [deactivateTarget, setDeactivateTarget] = useState<UserRead | null>(null);
   const [cancelInvite, setCancelInvite] = useState<InviteResponse | null>(null);
   const [saving, setSaving] = useState(false);
+
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
   const [inviteRoleSlug, setInviteRoleSlug] = useState('');
   const [inviteError, setInviteError] = useState<string | null>(null);
+
   const [editRoles, setEditRoles] = useState<string[]>([]);
   const [editStatus, setEditStatus] = useState('active');
-  const [editSector, setEditSector] = useState<ChatSector | null>(null); // ✅ NOVO
+  const [editSector, setEditSector] = useState<ChatSector | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Estado de criação/edição de perfil (role)
+  const [roleEditing, setRoleEditing] = useState<Role | null>(null); // null = criando
   const [roleName, setRoleName] = useState('');
   const [roleSlug, setRoleSlug] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
   const [rolePerms, setRolePerms] = useState<PermissionCode[]>([]);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [deleteRoleTarget, setDeleteRoleTarget] = useState<Role | null>(null);
 
   const loadRoles = useCallback(async () => {
     try {
@@ -154,9 +154,15 @@ export default function TeamPage() {
   useEffect(() => { loadRoles(); }, [loadRoles]);
   useEffect(() => { loadInvites(); }, [loadInvites]);
 
-  // Perfis válidos para convidar membro da equipe — todos, exceto cliente/super_admin.
-  const selectableRoles = roles.filter(
-    (r) => r.slug !== 'cliente' && r.slug !== 'super_admin'
+  // Perfis válidos para convidar — todos, exceto cliente/super_admin.
+  // Deduplica por slug (corrige "VendedorVendedor": roles de sistema + tenant
+  // com o mesmo slug colidiam no Select).
+  const selectableRoles = Array.from(
+    new Map(
+      roles
+        .filter((r) => r.slug !== 'cliente' && r.slug !== 'super_admin')
+        .map((r) => [r.slug, r])
+    ).values()
   );
 
   const submitInvite = async (e: React.FormEvent) => {
@@ -195,7 +201,7 @@ export default function TeamPage() {
     setEditUser(u);
     setEditRoles(u.roles);
     setEditStatus(u.status);
-    setEditSector(u.chat_sector ?? null); // ✅ NOVO
+    setEditSector(u.chat_sector ?? null);
     setEditError(null);
   };
 
@@ -219,7 +225,7 @@ export default function TeamPage() {
       await api.patch<UserRead>(`/users/${editUser.id}`, {
         role_slugs: editRoles,
         status: editStatus,
-        chat_sector: editSector, // ✅ NOVO
+        chat_sector: editSector,
       });
       toast.success('Colaborador atualizado.');
       setEditUser(null);
@@ -273,27 +279,72 @@ export default function TeamPage() {
   const slugify = (value: string) =>
     value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '');
 
+  // Abre o formulário para CRIAR um novo perfil (estado limpo)
+  const openCreateRole = () => {
+    setRoleEditing(null);
+    setRoleName('');
+    setRoleSlug('');
+    setRoleDescription('');
+    setRolePerms([]);
+    setRoleError(null);
+  };
+
+  // Abre o formulário para EDITAR um perfil existente
+  const openEditRole = (r: Role) => {
+    setRoleEditing(r);
+    setRoleName(r.name);
+    setRoleSlug(r.slug);
+    setRoleDescription(r.description ?? '');
+    setRolePerms(r.permissions as PermissionCode[]);
+    setRoleError(null);
+  };
+
   const submitRole = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
     setRoleError(null);
     if (roleName.trim().length < 2) { setRoleError('Informe o nome do perfil.'); return; }
-    const slug = slugify(roleSlug || roleName);
+    const slug = roleEditing ? roleEditing.slug : slugify(roleSlug || roleName);
     if (!/^[a-z0-9-_]+$/.test(slug)) { setRoleError('Identificador inválido (use minúsculas, números, hífen).'); return; }
     setSaving(true);
     try {
-      await api.post<Role>('/roles', {
-        name: roleName.trim(),
-        slug,
-        description: roleDescription.trim() || null,
-        permission_codes: rolePerms,
-      });
-      toast.success('Perfil de acesso criado.');
+      if (roleEditing) {
+        await api.patch<Role>(`/roles/${roleEditing.id}`, {
+          name: roleName.trim(),
+          description: roleDescription.trim() || null,
+          permission_codes: rolePerms,
+        });
+        toast.success('Perfil de acesso atualizado.');
+      } else {
+        await api.post<Role>('/roles', {
+          name: roleName.trim(),
+          slug,
+          description: roleDescription.trim() || null,
+          permission_codes: rolePerms,
+        });
+        toast.success('Perfil de acesso criado.');
+      }
       setRoleOpen(false);
+      setRoleEditing(null);
       setRoleName(''); setRoleSlug(''); setRoleDescription(''); setRolePerms([]);
       loadRoles();
     } catch (err) {
-      setRoleError(err instanceof ApiError ? err.message : 'Erro ao criar perfil.');
+      setRoleError(err instanceof ApiError ? err.message : 'Erro ao salvar perfil.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDeleteRole = async () => {
+    if (!deleteRoleTarget || saving) return;
+    setSaving(true);
+    try {
+      await api.delete(`/roles/${deleteRoleTarget.id}`);
+      toast.success('Perfil de acesso excluído.');
+      setDeleteRoleTarget(null);
+      loadRoles();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao excluir perfil.');
     } finally {
       setSaving(false);
     }
@@ -309,12 +360,19 @@ export default function TeamPage() {
         action={
           <div className="flex gap-2">
             {can(PERMISSIONS.ADMIN_MANAGE) && (
-              <Dialog open={roleOpen} onOpenChange={(o) => { setRoleOpen(o); if (!o) { setRoleName(''); setRoleSlug(''); setRoleDescription(''); setRolePerms([]); setRoleError(null); } }}>
+              <Dialog
+                open={roleOpen}
+                onOpenChange={(o) => { setRoleOpen(o); if (!o) { setRoleEditing(null); setRoleName(''); setRoleSlug(''); setRoleDescription(''); setRolePerms([]); setRoleError(null); } }}
+              >
                 <DialogTrigger asChild>
-                  <Button variant="outline"><Shield className="mr-2 h-4 w-4" />Perfis de acesso</Button>
+                  <Button variant="outline" onClick={openCreateRole}>
+                    <Shield className="mr-2 h-4 w-4" />Perfis de acesso
+                  </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>Perfis de acesso (Roles)</DialogTitle></DialogHeader>
+
+                  {/* Lista de perfis com ações de editar/excluir */}
                   <div className="max-h-72 space-y-2 overflow-auto">
                     {roles.map((r) => (
                       <div key={r.id} className="flex items-start justify-between gap-2 rounded-md border p-3">
@@ -326,11 +384,27 @@ export default function TeamPage() {
                           <p className="font-mono text-xs text-muted-foreground">{r.slug}</p>
                           {r.description && <p className="mt-1 text-xs text-muted-foreground">{r.description}</p>}
                         </div>
+                        <div className="flex shrink-0 gap-1">
+                          {!r.is_system && (
+                            <>
+                              <Button size="icon" variant="ghost" onClick={() => openEditRole(r)} aria-label={`Editar ${r.name}`}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button size="icon" variant="ghost" onClick={() => setDeleteRoleTarget(r)} aria-label={`Excluir ${r.name}`}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
+
+                  {/* Formulário criar/editar perfil */}
                   <form onSubmit={submitRole} className="space-y-4 border-t pt-4" noValidate>
-                    <p className="text-sm font-medium">Criar novo perfil</p>
+                    <p className="text-sm font-medium">
+                      {roleEditing ? `Editar perfil: ${roleEditing.name}` : 'Criar novo perfil'}
+                    </p>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-2">
                         <Label htmlFor="role-name">Nome *</Label>
@@ -338,7 +412,13 @@ export default function TeamPage() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="role-slug">Identificador (slug)</Label>
-                        <Input id="role-slug" value={roleSlug} onChange={(e) => setRoleSlug(e.target.value)} placeholder="vendedor-premium" />
+                        <Input
+                          id="role-slug"
+                          value={roleSlug}
+                          onChange={(e) => setRoleSlug(e.target.value)}
+                          placeholder="vendedor-premium"
+                          disabled={!!roleEditing}
+                        />
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -368,7 +448,9 @@ export default function TeamPage() {
                     </div>
                     {roleError && <p role="alert" className="text-sm text-destructive">{roleError}</p>}
                     <DialogFooter>
-                      <Button type="submit" disabled={saving}>{saving ? 'Criando…' : 'Criar perfil'}</Button>
+                      <Button type="submit" disabled={saving}>
+                        {saving ? 'Salvando…' : roleEditing ? 'Salvar alterações' : 'Criar perfil'}
+                      </Button>
                     </DialogFooter>
                   </form>
                 </DialogContent>
@@ -396,7 +478,7 @@ export default function TeamPage() {
                         <SelectTrigger className="w-full"><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
                         <SelectContent>
                           {selectableRoles.map((r) => (
-                            <SelectItem key={r.id} value={r.slug}>{r.name}</SelectItem>
+                            <SelectItem key={r.slug} value={r.slug}>{r.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -560,7 +642,6 @@ export default function TeamPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {/* ✅ NOVO: setor de atendimento do chat */}
               <div className="space-y-2">
                 <Label>Setor de atendimento (chat)</Label>
                 <Select
@@ -634,6 +715,24 @@ export default function TeamPage() {
             <AlertDialogCancel>Voltar</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={confirmCancelInvite} disabled={saving}>
               Cancelar convite
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Exclusão de perfil de acesso */}
+      <AlertDialog open={!!deleteRoleTarget} onOpenChange={(o) => { if (!o) setDeleteRoleTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir perfil de acesso?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O perfil "{deleteRoleTarget?.name}" será removido. Colaboradores com este perfil deixarão de tê-lo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={confirmDeleteRole} disabled={saving}>
+              Excluir perfil
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
