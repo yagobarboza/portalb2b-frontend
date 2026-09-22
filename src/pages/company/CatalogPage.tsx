@@ -26,6 +26,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../components/ui/select';
 import { DescriptionField } from '../../components/DescriptionField';
+import { subscribeIntegrationInvalidation } from '../../features/integrations/invalidation';
 
 const PAGE_SIZE = 20;
 const NO_CATEGORY = 'none';
@@ -167,6 +168,7 @@ export default function CatalogPage() {
   }, [page, searchDebounced, categoryFilter]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
+  useEffect(() => subscribeIntegrationInvalidation(() => { void loadProducts(); }), [loadProducts]);
   useEffect(() => () => revokeObjectPreview(preview), [preview]);
 
   const resetForm = () => {

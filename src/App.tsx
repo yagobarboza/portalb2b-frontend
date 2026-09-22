@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import { PERMISSIONS } from './lib/constants';
 import LoginPage from './pages/LoginPage';
 import ClientLayout from './layouts/ClientLayout';
 import CompanyLayout from './layouts/CompanyLayout';
@@ -24,7 +26,6 @@ import QuantityDiscountsPage from './pages/company/QuantityDiscountsPage'; // �
 import PurchaseRulesPage from './pages/company/PurchaseRulesPage';
 import CompanyFinancialPage from './pages/company/CompanyFinancialPage';
 // ✅ Integrações ERP (agente do cliente → chave de API → ingestão de estoque).
-import IntegrationsPage from './pages/company/IntegrationsPage';
 // ✅ Pagamentos & Assinatura (billing Asaas) — admin da empresa.
 import CompanyBillingPage from './pages/company/CompanyBillingPage';
 import CompaniesPage from './pages/superadmin/CompaniesPage';
@@ -37,6 +38,10 @@ import {
   DashboardPage, ClientsPage, CompanyOrdersPage, TeamPage,
   CompanyTicketsPage, CompanyChatPage,
 } from './pages/company/CompanyPages';
+
+const IntegrationsPage = lazy(() => import('./features/integrations/pages/IntegrationsPage'));
+const IntegrationDetailPage = lazy(() => import('./features/integrations/pages/IntegrationDetailPage'));
+const integrationFallback = <div className="p-8 text-sm text-muted-foreground">Carregando integrações…</div>;
 
 export default function App() {
   return (
@@ -83,7 +88,10 @@ export default function App() {
                 <Route path="/empresa/financeiro" element={<CompanyFinancialPage />} />
                 {/* ✅ Integrações ERP — cria integração, gera/revoga a chave do
                     agente e consulta as execuções. Só usuários da empresa. */}
-                <Route path="/empresa/integracoes" element={<IntegrationsPage />} />
+                <Route element={<ProtectedRoute requiredPermission={PERMISSIONS.INTEGRATION_READ} />}>
+                  <Route path="/empresa/integracoes" element={<Suspense fallback={integrationFallback}><IntegrationsPage /></Suspense>} />
+                  <Route path="/empresa/integracoes/:id" element={<Suspense fallback={integrationFallback}><IntegrationDetailPage /></Suspense>} />
+                </Route>
                 {/* ✅ Pagamentos & Assinatura (billing Asaas) — admin da empresa. */}
                 <Route path="/empresa/pagamentos" element={<CompanyBillingPage />} />
                 {/* ✅ Configurações do perfil (empresa) — caminho PRÓPRIO,

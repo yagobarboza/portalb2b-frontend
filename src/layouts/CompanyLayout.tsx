@@ -37,9 +37,7 @@ const menuItems = [
   // empresa (staff). O backend (perfil empresa + tenant) é a autoridade,
   // por isso não há `permission` granular aqui (mesmo padrão de Integrações).
   { label: 'Pagamentos', href: '/empresa/pagamentos', icon: Receipt },
-  // ✅ Integrações ERP — o backend exige apenas usuário da empresa (staff),
-  // sem permissão granular; por isso não há `permission` aqui.
-  { label: 'Integrações', href: '/empresa/integracoes', icon: PlugZap },
+  { label: 'Integrações', href: '/empresa/integracoes', icon: PlugZap, permission: PERMISSIONS.INTEGRATION_READ },
 ];
 
 export default function CompanyLayout() {

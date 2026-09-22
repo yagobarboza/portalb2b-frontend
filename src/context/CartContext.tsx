@@ -9,6 +9,7 @@ import React, {
 import type { Cart, CartItem, Product, ProductPage } from '../types/api';
 import { api } from '../lib/api';
 import { useAuth, resolveProfile } from './AuthContext';
+import { subscribeIntegrationInvalidation } from '../features/integrations/invalidation';
 
 interface CartContextValue {
   items: CartItem[];
@@ -99,6 +100,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [user, loadCart]);
 
   const refresh = useCallback(() => loadCart(), [loadCart]);
+
+  useEffect(() => subscribeIntegrationInvalidation(() => { void loadCart(); }), [loadCart]);
 
   // Adiciona item → backend valida produto/quantidade E recalcula o preço.
   const addItem = useCallback(async (productId: string, quantity: number) => {

@@ -29,6 +29,7 @@ const ROLE_LABELS: Record<string, string> = {
   tickets: 'Tickets',
   financial: 'Financeiro',
   admin: 'Administração',
+  integrations: 'Integrações ERP',
 };
 // Rótulos e opções dos setores de atendimento (chat)
 const CHAT_SECTOR_LABELS: Record<ChatSector, string> = {

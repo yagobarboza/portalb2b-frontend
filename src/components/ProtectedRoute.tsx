@@ -22,10 +22,11 @@ export default function ProtectedRoute({ profiles, requiredPermission }: Protect
   const profile = resolveProfile(user);
 
   // Perfil não permitido nesta área → redireciona para a rota correta do usuário.
-  if (profiles && profile && !profiles.includes(profile)) {
+  if (profiles && (!profile || !profiles.includes(profile))) {
     if (profile === 'superadmin') return <Navigate to="/superadmin" replace />;
     if (profile === 'cliente') return <Navigate to="/loja" replace />;
     if (profile === 'empresa') return <Navigate to="/empresa" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   // RBAC: permissão exigida ausente → redireciona (o backend SEMPRE revalida).

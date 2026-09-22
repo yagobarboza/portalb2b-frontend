@@ -38,6 +38,10 @@ export const PERMISSIONS = {
   // ✅ Billing (cobranças/assinaturas Asaas)
   BILLING_READ: 'billing:read',      // admin da empresa vê as cobranças dela
   BILLING_MANAGE: 'billing:manage',  // superadmin cria/gerencia cobranças
+  INTEGRATION_READ: 'integrations:read',
+  INTEGRATION_MANAGE: 'integrations:manage',
+  INTEGRATION_RUN: 'integrations:run',
+  INTEGRATION_SECRETS: 'integrations:secrets',
   SUPER_ADMIN: 'super_admin:all',
 } as const;
 
@@ -55,6 +59,10 @@ export const PERMISSION_GROUPS: Record<string, PermissionCode[]> = {
   tickets: [PERMISSIONS.TICKET_READ, PERMISSIONS.TICKET_CREATE, PERMISSIONS.TICKET_UPDATE],
   financial: [PERMISSIONS.FINANCIAL_READ],
   billing: [PERMISSIONS.BILLING_READ, PERMISSIONS.BILLING_MANAGE],
+  integrations: [
+    PERMISSIONS.INTEGRATION_READ, PERMISSIONS.INTEGRATION_MANAGE,
+    PERMISSIONS.INTEGRATION_RUN, PERMISSIONS.INTEGRATION_SECRETS,
+  ],
   admin: [PERMISSIONS.ADMIN_MANAGE],
 };
 

@@ -19,6 +19,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../components/ui/select';
 import { cn } from '../../lib/utils';
+import { subscribeIntegrationInvalidation } from '../../features/integrations/invalidation';
 
 type SortOption = 'relevance' | 'price-asc' | 'price-desc' | 'name-asc';
 
@@ -209,6 +210,7 @@ export default function StorePage() {
   }, [page, searchDebounced, selectedCategory, sortBy, user?.customer_id, registerProduct]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
+  useEffect(() => subscribeIntegrationInvalidation(() => { void loadProducts(); }), [loadProducts]);
 
   // ✅ Ir para uma página específica (valida entre 1 e pages).
   const goToPage = (target: number) => {
