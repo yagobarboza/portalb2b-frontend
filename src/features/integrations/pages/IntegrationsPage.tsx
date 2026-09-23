@@ -6,7 +6,7 @@ import {
   RefreshCw, Save, Settings, Trash2, Upload,
 } from 'lucide-react';
 import { ApiError } from '../../../lib/api';
-import { API_BASE_URL } from '../../../lib/env';
+import { absoluteApiUrl } from '../../../lib/env';
 import { PERMISSIONS } from '../../../lib/constants';
 import { useAuth } from '../../../context/AuthContext';
 import { integrationsApi } from '../api';
@@ -644,9 +644,9 @@ export default function IntegrationsPage() {
                     <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2">
                       <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <code className="min-w-0 flex-1 truncate font-mono text-xs">
-                        {API_BASE_URL}/webhooks/{it.id}
+                        {absoluteApiUrl(`/webhooks/${it.id}`)}
                       </code>
-                      <Button variant="outline" size="sm" onClick={() => copyKey(`${API_BASE_URL}/webhooks/${it.id}`)} aria-label="Copiar URL do webhook">
+                      <Button variant="outline" size="sm" onClick={() => copyKey(absoluteApiUrl(`/webhooks/${it.id}`))} aria-label="Copiar URL do webhook">
                         {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
                       </Button>
                     </div>

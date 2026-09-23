@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ArrowLeft, Check, Copy, KeyRound, Loader2, Play, RefreshCw, RotateCcw, Save, TestTube2 } from 'lucide-react';
 import { ApiError } from '../../../lib/api';
-import { API_BASE_URL } from '../../../lib/env';
+import { absoluteApiUrl } from '../../../lib/env';
 import { PERMISSIONS } from '../../../lib/constants';
 import { useAuth } from '../../../context/AuthContext';
 import { Button } from '../../../components/ui/button';
@@ -200,7 +200,7 @@ export default function IntegrationDetailPage() {
 
   if (loading) return <div className="flex justify-center py-20 text-muted-foreground"><Loader2 className="mr-2 animate-spin" /> Carregando integração…</div>;
   if (!integration) return <div className="p-8">Integração não encontrada.</div>;
-  const webhookUrl = `${API_BASE_URL}/webhooks/${integration.id}`;
+  const webhookUrl = absoluteApiUrl(`/webhooks/${integration.id}`);
 
   return <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
     <div className="flex flex-wrap items-center justify-between gap-3">

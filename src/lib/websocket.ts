@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { SESSION_EXPIRED_EVENT } from './api';
+import { absoluteApiUrl } from './env';
 import type { ChatMessage } from '@/types/api';
 
 export type ChatConnectionStatus = 'connecting' | 'open' | 'closed' | 'reconnecting';
@@ -40,11 +41,10 @@ interface UseChatWebSocketOptions {
 const MAX_RECONNECT_DELAY = 30_000;
 const HEARTBEAT_INTERVAL = 30_000;
 
-function buildWsUrl(roomId: string): string {
-  // Mesma origem: o proxy do Vite (ws: true) encaminha /api para o backend
-  // e envia os cookies HttpOnly da sessão no handshake.
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${protocol}://${window.location.host}/api/v1/chat/ws/${roomId}`;
+export function buildWsUrl(roomId: string): string {
+  const url = new URL(absoluteApiUrl(`/chat/ws/${encodeURIComponent(roomId)}`));
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
 }
 
 /** Valida o shape mínimo de uma mensagem vinda do WS (dados não confiáveis). */
