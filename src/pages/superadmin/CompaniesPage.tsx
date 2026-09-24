@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { Building2, Loader2, Pencil, Plus, Power, RotateCcw, Search } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import type { Company, CompanyPage, CompanyUpdate } from '../../types/api';
-import { isValidHexColor } from '../../lib/branding';
+import { isSafeAssetUrl, isValidHexColor } from '../../lib/branding';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -21,6 +21,8 @@ interface CompanyForm {
   cnpj: string;
   slug: string;
   domain: string;
+  logo_url: string;
+  favicon_url: string;
   primary_color: string;
   secondary_color: string;
   admin_email: string;
@@ -40,6 +42,7 @@ interface CompanyEditForm {
 
 const emptyForm = (): CompanyForm => ({
   name: '', cnpj: '', slug: '', domain: '',
+  logo_url: '', favicon_url: '',
   primary_color: '', secondary_color: '', admin_email: '', admin_full_name: '',
 });
 
@@ -142,6 +145,12 @@ export default function CompaniesPage() {
     if (!form.name.trim()) return 'Informe o nome da empresa.';
     if (!form.cnpj.trim()) return 'Informe o CNPJ.';
     if (!form.slug.trim()) return 'Informe o slug.';
+    if (form.logo_url.trim() && !isSafeAssetUrl(form.logo_url)) {
+      return 'URL do logo inválida. Use uma URL HTTP/HTTPS ou um caminho relativo.';
+    }
+    if (form.favicon_url.trim() && !isSafeAssetUrl(form.favicon_url)) {
+      return 'URL do favicon inválida. Use uma URL HTTP/HTTPS ou um caminho relativo.';
+    }
     if (form.primary_color.trim() && !isValidHexColor(form.primary_color)) {
       return 'Cor primária inválida (use #RRGGBB).';
     }
@@ -166,6 +175,8 @@ export default function CompaniesPage() {
         cnpj: form.cnpj.trim(),
         slug: form.slug.trim(),
         domain: form.domain.trim() || undefined,
+        logo_url: form.logo_url.trim() || undefined,
+        favicon_url: form.favicon_url.trim() || undefined,
         primary_color: form.primary_color.trim() || undefined,
         secondary_color: form.secondary_color.trim() || undefined,
         admin_email: form.admin_email.trim(),
@@ -493,6 +504,26 @@ export default function CompaniesPage() {
             <div className="space-y-2">
               <Label htmlFor="c-domain">Domínio (opcional)</Label>
               <Input id="c-domain" value={form.domain} onChange={setField('domain')} placeholder="portal.minhaempresa.com.br" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="c-logo">Logo (URL)</Label>
+              <Input
+                id="c-logo"
+                type="url"
+                value={form.logo_url}
+                onChange={setField('logo_url')}
+                placeholder="https://cdn.exemplo.com/logo.png"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="c-favicon">Favicon (URL)</Label>
+              <Input
+                id="c-favicon"
+                type="url"
+                value={form.favicon_url}
+                onChange={setField('favicon_url')}
+                placeholder="https://cdn.exemplo.com/favicon.ico"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">

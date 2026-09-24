@@ -141,6 +141,8 @@ export interface CompanyCreateRequest {
   cnpj: string;
   slug: string;
   domain?: string | null;
+  logo_url?: string | null;
+  favicon_url?: string | null;
   primary_color?: string | null; // ^#[0-9a-fA-F]{6}$
   secondary_color?: string | null;
   admin_email: string;

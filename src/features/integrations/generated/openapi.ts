@@ -2819,6 +2819,10 @@ export interface components {
             slug: string;
             /** Domain */
             domain?: string | null;
+            /** Logo Url */
+            logo_url?: string | null;
+            /** Favicon Url */
+            favicon_url?: string | null;
             /** Primary Color */
             primary_color?: string | null;
             /** Secondary Color */
