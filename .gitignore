@@ -29,3 +29,6 @@ dist-ssr
 .env.*.local
 !.env.example
 !.env.production.example
+
+# Credenciais temporárias geradas pelo google-github-actions/auth
+gha-creds-*.json

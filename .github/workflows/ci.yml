@@ -18,3 +18,65 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+
+  deploy-production:
+    name: Deploy — Google Cloud
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: portal-b2b-frontend-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT_ID: project-2295f6f0-ccd8-4a77-96f
+      FRONTEND_BUCKET: project-2295f6f0-ccd8-4a77-96f-portal-frontend
+      WIF_PROVIDER: projects/702576245812/locations/global/workloadIdentityPools/github-actions/providers/github-provider
+      DEPLOYER_SA: portal-github-frontend@project-2295f6f0-ccd8-4a77-96f.iam.gserviceaccount.com
+      VITE_API_URL: /api/v1
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Gerar frontend de produção
+        run: |
+          npm ci
+          npm run build
+
+      - name: Autenticar no Google Cloud sem chave estática
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - name: Configurar Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Publicar arquivos com remoção segura dos obsoletos
+        run: |
+          gcloud storage rsync dist "gs://${FRONTEND_BUCKET}" \
+            --recursive \
+            --delete-unmatched-destination-objects
+
+      - name: Configurar cache do HTML e dos assets versionados
+        run: |
+          gcloud storage objects update \
+            "gs://${FRONTEND_BUCKET}/index.html" \
+            --cache-control="no-cache,max-age=0,must-revalidate"
+          gcloud storage objects update \
+            "gs://${FRONTEND_BUCKET}/assets/**" \
+            --cache-control="public,max-age=31536000,immutable"
+
+      - name: Validar produção
+        run: |
+          curl --fail --silent --show-error \
+            --retry 12 --retry-delay 10 --retry-all-errors \
+            https://app.nydsoftwares.com.br/login > /dev/null
