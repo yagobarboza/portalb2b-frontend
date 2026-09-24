@@ -60,11 +60,14 @@ jobs:
       - name: Configurar Google Cloud CLI
         uses: google-github-actions/setup-gcloud@v3
 
-      - name: Publicar arquivos com remoção segura dos obsoletos
+      - name: Publicar assets antes do HTML
         run: |
           gcloud storage rsync dist "gs://${FRONTEND_BUCKET}" \
             --recursive \
-            --delete-unmatched-destination-objects
+            --exclude='(^|/)index\.html$'
+
+          gcloud storage cp dist/index.html \
+            "gs://${FRONTEND_BUCKET}/index.html"
 
       - name: Configurar cache do HTML e dos assets versionados
         run: |
@@ -77,6 +80,31 @@ jobs:
 
       - name: Validar produção
         run: |
-          curl --fail --silent --show-error \
-            --retry 12 --retry-delay 10 --retry-all-errors \
-            https://app.nydsoftwares.com.br/login > /dev/null
+          validate_frontend() {
+            local domain="$1"
+            local html
+            local assets
+
+            html="$(curl --fail --silent --show-error \
+              --retry 12 --retry-delay 10 --retry-all-errors \
+              "https://${domain}/index.html?deploy=${GITHUB_SHA}")"
+
+            printf '%s' "$html" | grep -q 'id="root"'
+            assets="$(printf '%s' "$html" \
+              | grep -oE '/assets/[^" ]+\.(js|css)' \
+              | sort -u)"
+
+            if [ -z "$assets" ]; then
+              echo "Nenhum asset versionado encontrado no HTML de ${domain}." >&2
+              exit 1
+            fi
+
+            while IFS= read -r asset; do
+              curl --fail --silent --show-error \
+                --retry 12 --retry-delay 10 --retry-all-errors \
+                "https://${domain}${asset}" > /dev/null
+            done <<< "$assets"
+          }
+
+          validate_frontend app.nydsoftwares.com.br
+          validate_frontend portal.fiobikeshop.com.br
