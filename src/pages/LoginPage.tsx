@@ -149,28 +149,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen">
       {/* ── Painel de marca (esquerda) — cores do tenant (ou preto padrão), oculto no mobile ── */}
       <div
-        className="relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+        className="relative hidden w-1/2 flex-col justify-center overflow-hidden p-12 text-white lg:flex"
         style={{ backgroundColor: primaryColor }}
       >
-        <div className="relative z-10">
-          {companyLogo ? (
-            /* Logo white-label em destaque, sem distorcer nem recortar. */
-            <img
-              src={companyLogo}
-              alt={companyName ?? 'Logo'}
-              className="h-40 w-full max-w-md object-contain object-left"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            /* ✅ Padrão (sem domínio): logo da nyd MAIOR, em branco sobre o preto */
-            <img
-              src="/svg-logo-nydsoftwares.svg"
-              alt="nydSoftwares"
-              className="h-16 w-16 object-contain brightness-0 invert"
-            />
-          )}
-        </div>
-
         <div className="relative z-10 max-w-md">
           <h2 className="text-4xl font-bold leading-tight tracking-tight">
             {companyName ?? 'Portal B2B'}
@@ -186,7 +167,7 @@ export default function LoginPage() {
         </div>
 
         {/* Atribuição — "nydSoftwares" clicável → site da NYD */}
-        <div className="relative z-10 flex items-center gap-2 text-xs text-white/70">
+        <div className="absolute bottom-12 left-12 z-10 flex items-center gap-2 text-xs text-white/70">
           <img
             src="/svg-logo-nydsoftwares.svg"
             alt="nydSoftwares"
