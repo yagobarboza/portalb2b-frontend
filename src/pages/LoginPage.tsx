@@ -24,15 +24,10 @@ const NYD_SITE = 'https://nydsoftwares.com.br';
 
 /**
  * Cor primária do tenant. Sem domínio cadastrado (padrão) usa
- * um preto suave — a página padrão é da nydSoftwares (degrade preto).
+ * um preto suave — a página padrão é da nydSoftwares.
  */
 function resolvePrimary(branding: CompanyBranding | null): string {
   return branding?.primary_color?.trim() || '#1A1A1A';
-}
-
-/** Cor secundária do tenant. Padrão: preto absoluto (fim do degrade). */
-function resolveSecondary(branding: CompanyBranding | null): string {
-  return branding?.secondary_color?.trim() || '#000000';
 }
 
 export default function LoginPage() {
@@ -76,7 +71,6 @@ export default function LoginPage() {
 
   const companyName = branding?.name?.trim();
   const primaryColor = resolvePrimary(branding);
-  const secondaryColor = resolveSecondary(branding);
 
   // Countdown do bloqueio de 429.
   useEffect(() => {
@@ -156,19 +150,15 @@ export default function LoginPage() {
       {/* ── Painel de marca (esquerda) — cores do tenant (ou preto padrão), oculto no mobile ── */}
       <div
         className="relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white lg:flex"
-        style={{ background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})` }}
+        style={{ backgroundColor: primaryColor }}
       >
-        {/* Camadas decorativas (brilho) */}
-        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-black/10 blur-3xl" />
-
         <div className="relative z-10">
           {companyLogo ? (
-            /* ✅ Logo da empresa — tamanho generoso no painel */
+            /* Logo white-label em destaque, sem distorcer nem recortar. */
             <img
               src={companyLogo}
               alt={companyName ?? 'Logo'}
-              className="h-16 w-16 rounded-xl bg-white/10 object-contain p-1"
+              className="h-40 w-full max-w-md object-contain object-left"
               referrerPolicy="no-referrer"
             />
           ) : (
@@ -222,11 +212,11 @@ export default function LoginPage() {
           {/* Marca no topo (mobile) — logo da empresa OU nydSoftwares */}
           <div className="mb-8 flex flex-col items-center gap-3">
             {companyLogo ? (
-              /* ✅ Logo da empresa — tamanho bom no topo do formulário */
+              /* Logo white-label ampla também em telas menores. */
               <img
                 src={companyLogo}
                 alt={companyName ?? 'Logo'}
-                className="h-16 w-16 rounded-lg object-contain"
+                className="h-32 w-full max-w-xs object-contain"
                 referrerPolicy="no-referrer"
               />
             ) : (
