@@ -8,6 +8,7 @@ import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '../components/ui/card';
 import { toast } from 'sonner';
+import { usePublicBranding } from '../lib/usePublicBranding';
 
 interface AcceptInviteResponse {
   status: string;
@@ -25,6 +26,8 @@ export default function AcceptInvitePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const { branding, logoUrl } = usePublicBranding();
+  const companyName = branding?.name?.trim();
 
   // Sem token na URL → aviso imediato (link inválido/incompleto).
   useEffect(() => {
@@ -70,6 +73,9 @@ export default function AcceptInvitePage() {
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
+            {logoUrl && (
+              <img src={logoUrl} alt={companyName ?? 'Logo'} className="mb-2 h-14 w-14 object-contain" />
+            )}
             <CardTitle className="text-xl">Cadastro concluído</CardTitle>
             <CardDescription>
               Sua conta foi criada com sucesso.
@@ -92,9 +98,12 @@ export default function AcceptInvitePage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
+          {logoUrl && (
+            <img src={logoUrl} alt={companyName ?? 'Logo'} className="mb-2 h-14 w-14 object-contain" />
+          )}
           <CardTitle className="text-xl">Criar sua conta</CardTitle>
           <CardDescription>
-            Você foi convidado para acessar o nydB2B. Defina seus dados de acesso.
+            Você foi convidado para acessar {companyName ?? 'o Portal B2B'}. Defina seus dados de acesso.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -4,8 +4,8 @@ import { toast } from 'sonner';
 import { ArrowLeft, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { defaultPathForUser } from '../lib/constants';
-import { api, ApiError } from '../lib/api';
-import { safeLogoUrl } from '../lib/branding';
+import { ApiError } from '../lib/api';
+import { usePublicBranding } from '../lib/usePublicBranding';
 import type { CompanyBranding } from '../types/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -52,8 +52,9 @@ export default function LoginPage() {
   const [mfaLoading, setMfaLoading] = useState(false);
   const [mfaError, setMfaError] = useState<string | null>(null);
 
-  // Branding público resolvido pelo DOMÍNIO de acesso (pré-login).
-  const [branding, setBranding] = useState<CompanyBranding | null>(null);
+  // Branding público resolvido pelo DOMÍNIO de acesso (pré-login), incluindo
+  // título e favicon específicos do tenant.
+  const { branding, logoUrl: companyLogo } = usePublicBranding();
 
   // ✅ TEMA LIGHT FORÇADO APENAS NO LOGIN.
   // O shadcn/ui controla o tema pela classe `dark` no <html>. Este efeito
@@ -73,23 +74,6 @@ export default function LoginPage() {
     if (isAuthenticated && user) navigate(defaultPathForUser(user), { replace: true });
   }, [isAuthenticated, user, navigate]);
 
-  // Resolve branding pelo domínio (endpoint público /companies/by-domain/{domain}).
-  useEffect(() => {
-    let active = true;
-    const host = window.location.hostname;
-    if (!host || host === 'localhost' || host === '127.0.0.1') return;
-    (async () => {
-      try {
-        const data = await api.get<CompanyBranding>(`/companies/by-domain/${encodeURIComponent(host)}`);
-        if (active) setBranding(data);
-      } catch {
-        // Domínio não cadastrado → branding fica null → marca NYD.
-      }
-    })();
-    return () => { active = false; };
-  }, []);
-
-  const companyLogo = safeLogoUrl(branding);
   const companyName = branding?.name?.trim();
   const primaryColor = resolvePrimary(branding);
   const secondaryColor = resolveSecondary(branding);

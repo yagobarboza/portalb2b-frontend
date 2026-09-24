@@ -5,6 +5,7 @@ import { CartProvider } from './context/CartContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { PERMISSIONS } from './lib/constants';
 import LoginPage from './pages/LoginPage';
+import AcceptInvitePage from './pages/AcceptInvitePage';
 import ClientLayout from './layouts/ClientLayout';
 import CompanyLayout from './layouts/CompanyLayout';
 import SuperAdminLayout from './layouts/SuperAdminLayout';
@@ -51,6 +52,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
             {/* Cliente (customer_id !== null) */}
             <Route element={<ProtectedRoute profiles={['cliente']} />}>

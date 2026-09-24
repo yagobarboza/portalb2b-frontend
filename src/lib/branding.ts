@@ -86,3 +86,22 @@ export function safeFaviconUrl(branding: CompanyBranding | null): string | null 
   if (!branding) return null;
   return isSafeAssetUrl(branding.favicon_url) ? branding.favicon_url : null;
 }
+
+const DEFAULT_FAVICON_URL = '/fav-icon-nyd.png';
+const DEFAULT_DOCUMENT_TITLE = 'Portal B2B | nydSoftwares';
+
+/** Aplica metadados visuais nas telas públicas, antes da autenticação. */
+export function applyDocumentBranding(branding: CompanyBranding | null): void {
+  let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!favicon) {
+    favicon = document.createElement('link');
+    favicon.rel = 'icon';
+    document.head.appendChild(favicon);
+  }
+
+  favicon.href = safeFaviconUrl(branding) ?? DEFAULT_FAVICON_URL;
+  const companyName = branding?.name?.trim();
+  document.title = companyName
+    ? `${companyName} | Portal B2B`
+    : DEFAULT_DOCUMENT_TITLE;
+}
